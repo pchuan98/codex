@@ -161,6 +161,7 @@ pub(crate) mod public_widgets;
 mod render;
 mod resize_reflow_cap;
 mod resume_picker;
+mod resume_scope;
 mod selection_list;
 mod service_tier_resolution;
 mod session_archive_commands;
@@ -628,7 +629,7 @@ async fn lookup_session_target_by_name_with_app_server(
                 sort_key: Some(AppServerThreadSortKey::UpdatedAt),
                 sort_direction: None,
                 model_providers: None,
-                source_kinds: Some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
+                source_kinds: Some(resume_scope::main_session_source_kinds()),
                 archived: Some(false),
                 parent_thread_id: None,
                 ancestor_thread_id: None,
