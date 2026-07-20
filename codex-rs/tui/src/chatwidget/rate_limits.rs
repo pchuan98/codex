@@ -176,6 +176,8 @@ impl ChatWidget {
         snapshot: Option<RateLimitSnapshot>,
         source: RateLimitSnapshotSource,
     ) {
+        let captured_at = Local::now();
+        self.sync_custom_status_line_rate_limit(snapshot.as_ref(), captured_at);
         if let Some(mut snapshot) = snapshot {
             let limit_id = snapshot
                 .limit_id
@@ -298,7 +300,7 @@ impl ChatWidget {
             }
 
             let mut display =
-                rate_limit_snapshot_display_for_limit(&snapshot, limit_label, Local::now());
+                rate_limit_snapshot_display_for_limit(&snapshot, limit_label, captured_at);
             if display.individual_limit.is_none() {
                 display.individual_limit = preserved_individual_limit;
             }

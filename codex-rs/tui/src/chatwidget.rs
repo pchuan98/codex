@@ -330,6 +330,9 @@ mod command_lifecycle;
 mod connectors;
 mod constructor;
 use self::connectors::ConnectorsState;
+mod custom_status_line;
+use self::custom_status_line::CustomStatusLineState;
+pub(crate) use self::custom_status_line::CustomStatusLineGitStatus;
 mod exec_state;
 use self::exec_state::RunningCommand;
 use self::exec_state::UnifiedExecProcessSummary;
@@ -416,6 +419,8 @@ mod streaming;
 use self::status_surfaces::CachedProjectRootName;
 mod tokens;
 pub(crate) use self::tokens::TokenActivityView;
+mod thread_token_usage;
+use self::thread_token_usage::ThreadTokenUsageState;
 mod tool_lifecycle;
 mod tool_requests;
 mod transcript;
@@ -553,8 +558,10 @@ pub(crate) struct ChatWidget {
     initial_user_message: Option<UserMessage>,
     status_account_display: Option<StatusAccountDisplay>,
     runtime_model_provider_base_url: Option<String>,
+    custom_status_line: CustomStatusLineState,
     pub(crate) remote_connection: Option<RemoteConnectionStatus>,
     token_info: Option<TokenUsageInfo>,
+    thread_token_usage: ThreadTokenUsageState,
     rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,
     refreshing_status_outputs: Vec<(u64, StatusHistoryHandle)>,
     next_status_refresh_request_id: u64,
@@ -1127,17 +1134,6 @@ impl ChatWidget {
     pub(crate) fn set_memory_settings(&mut self, use_memories: bool, generate_memories: bool) {
         self.config.memories.use_memories = use_memories;
         self.config.memories.generate_memories = generate_memories;
-    }
-
-    pub(crate) fn set_token_info(&mut self, info: Option<TokenUsageInfo>) {
-        match info {
-            Some(info) => self.apply_token_info(info),
-            None => {
-                self.bottom_pane
-                    .set_context_window(/*percent*/ None, /*used_tokens*/ None);
-                self.token_info = None;
-            }
-        }
     }
 
     fn apply_token_info(&mut self, info: TokenUsageInfo) {
@@ -1929,9 +1925,6 @@ impl ChatWidget {
         self.bottom_pane.status_line_text()
     }
 
-    pub(crate) fn clear_token_usage(&mut self) {
-        self.token_info = None;
-    }
 }
 
 fn has_websocket_timing_metrics(summary: RuntimeMetricsSummary) -> bool {

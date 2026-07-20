@@ -26,6 +26,7 @@ pub(super) struct FooterState {
     pub(super) goal_status_indicator: Option<GoalStatusIndicator>,
     pub(super) ide_context_active: bool,
     pub(super) status_line_value: Option<Line<'static>>,
+    pub(super) status_line_right_value: Option<Line<'static>>,
     pub(super) status_line_hyperlink_url: Option<String>,
     pub(super) status_line_enabled: bool,
     pub(super) side_conversation_context_label: Option<String>,

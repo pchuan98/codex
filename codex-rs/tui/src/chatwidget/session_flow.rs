@@ -20,6 +20,7 @@ impl ChatWidget {
         self.session_network_proxy = session.network_proxy.clone();
         let previous_thread_id = self.thread_id;
         self.thread_id = Some(session.thread_id);
+        self.restore_current_thread_token_info();
         self.bottom_pane
             .set_queue_submissions(/*queue_submissions*/ false);
         if previous_thread_id != self.thread_id {

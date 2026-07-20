@@ -30,9 +30,19 @@ impl ChatWidget {
         }
         match notification {
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
-                self.set_token_info(Some(token_usage_info_from_app_server(
-                    notification.token_usage,
-                )));
+                match ThreadId::from_string(&notification.thread_id) {
+                    Ok(thread_id) => self.set_thread_token_info(
+                        thread_id,
+                        token_usage_info_from_app_server(notification.token_usage),
+                    ),
+                    Err(err) => {
+                        tracing::warn!(
+                            thread_id = notification.thread_id,
+                            error = %err,
+                            "ignoring app-server ThreadTokenUsageUpdated with invalid thread_id"
+                        );
+                    }
+                }
             }
             ServerNotification::ThreadNameUpdated(notification) => {
                 match ThreadId::from_string(&notification.thread_id) {

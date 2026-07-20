@@ -972,6 +972,14 @@ impl App {
                     }
                 }
             },
+            AppEvent::CustomStatusLineGitStatusUpdated { cwd, status } => {
+                if self
+                    .chat_widget
+                    .finish_custom_status_line_git_status_refresh(cwd, status)
+                {
+                    tui.frame_requester().schedule_frame();
+                }
+            }
             AppEvent::OpenTokenActivity => {
                 self.chat_widget
                     .add_token_activity_output(crate::chatwidget::TokenActivityView::Daily);

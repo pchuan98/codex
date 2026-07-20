@@ -4,7 +4,6 @@
 //! behavior easier to review without paging through the rest of `chatwidget.rs`.
 
 use super::*;
-use crate::bottom_pane::status_line_from_segments;
 use crate::branch_summary;
 use crate::chatwidget::limit_label_for_window;
 use crate::chatwidget::rate_limits::get_limits_duration;
@@ -86,12 +85,11 @@ pub(super) struct CachedProjectRootName {
 
 impl ChatWidget {
     fn status_surface_selections(&self) -> StatusSurfaceSelections {
-        let (status_line_items, invalid_status_line_items) = self.status_line_items_with_invalids();
         let (terminal_title_items, invalid_terminal_title_items) =
             self.terminal_title_items_with_invalids();
         StatusSurfaceSelections {
-            status_line_items,
-            invalid_status_line_items,
+            status_line_items: Vec::new(),
+            invalid_status_line_items: Vec::new(),
             terminal_title_items,
             invalid_terminal_title_items,
         }
@@ -175,31 +173,8 @@ impl ChatWidget {
     }
 
     fn refresh_status_line_from_selections(&mut self, selections: &StatusSurfaceSelections) {
-        let enabled = !selections.status_line_items.is_empty();
-        self.bottom_pane.set_status_line_enabled(enabled);
-        if !enabled {
-            self.set_status_line(/*status_line*/ None);
-            self.set_status_line_hyperlink(/*url*/ None);
-            return;
-        }
-
-        let mut segments = Vec::new();
-        for item in &selections.status_line_items {
-            if let Some(value) = self.status_line_value_for_item(*item) {
-                segments.push((*item, value));
-            }
-        }
-
-        self.set_status_line(status_line_from_segments(
-            segments,
-            self.config.tui_status_line_use_colors,
-        ));
-        let hyperlink_url = selections
-            .status_line_items
-            .contains(&StatusLineItem::PullRequestNumber)
-            .then(|| self.status_line_pull_request_url())
-            .flatten();
-        self.set_status_line_hyperlink(hyperlink_url);
+        let _ = selections;
+        self.refresh_custom_status_line();
     }
 
     /// Clears the terminal title Codex most recently wrote, if any.
@@ -750,13 +725,6 @@ impl ChatWidget {
             StatusLineItem::WorkspaceHeadline => self.status_line_workspace_headline.clone(),
             StatusLineItem::TaskProgress => self.terminal_title_task_progress(),
         }
-    }
-
-    fn status_line_pull_request_url(&self) -> Option<String> {
-        self.status_line_git_summary
-            .as_ref()
-            .and_then(|summary| summary.pull_request.as_ref())
-            .map(|pull_request| pull_request.url.clone())
     }
 
     pub(super) fn status_surface_preview_value_for_item(

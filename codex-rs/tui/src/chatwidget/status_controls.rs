@@ -72,6 +72,11 @@ impl ChatWidget {
         self.bottom_pane.set_status_line(status_line);
     }
 
+    /// Sets the right-aligned status-line value rendered alongside mode indicators.
+    pub(crate) fn set_status_line_right(&mut self, status_line: Option<Line<'static>>) {
+        self.bottom_pane.set_status_line_right(status_line);
+    }
+
     /// Sets the terminal hyperlink target for the currently rendered footer status line.
     pub(crate) fn set_status_line_hyperlink(&mut self, url: Option<String>) {
         self.bottom_pane.set_status_line_hyperlink(url);
