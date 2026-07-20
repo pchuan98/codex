@@ -1258,16 +1258,12 @@ pub async fn run_main(
 
     let otel_tracing_layer = otel.as_ref().and_then(|o| o.tracing_layer());
 
-    let log_db = state_db.clone().map(log_db::start);
-    let log_db_layer = log_db
-        .clone()
-        .map(|layer| layer.with_filter(log_db::default_filter()));
+    let log_db: Option<log_db::LogDbLayer> = None;
 
     let _ = tracing_subscriber::registry()
         .with(tui_file_layer)
         .with(feedback_layer)
         .with(feedback_metadata_layer)
-        .with(log_db_layer)
         .with(otel_logger_layer)
         .with(otel_tracing_layer)
         .try_init();
