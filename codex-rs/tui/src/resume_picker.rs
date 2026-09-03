@@ -197,6 +197,8 @@ enum PickerLoadRequest {
 #[derive(Clone)]
 enum ProviderFilter {
     Any,
+    // Unlike the upstream `Any`, explicitly bypass the server's provider default.
+    AllProviders,
     MatchDefault(String),
 }
 
@@ -441,7 +443,7 @@ async fn run_resume_picker_with_launch_context(
         app_server.remote_cwd_override(),
     );
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_filesystem);
-    let provider_filter = picker_provider_filter(config, uses_remote_workspace);
+    let provider_filter = ProviderFilter::AllProviders;
     let runtime_keymap = picker_runtime_keymap(local_settings)?;
     let options = SessionPickerRunOptions {
         show_all,
@@ -2056,6 +2058,7 @@ fn thread_list_params(
         sort_direction: None,
         model_providers: match provider_filter {
             ProviderFilter::Any => None,
+            ProviderFilter::AllProviders => Some(Vec::new()),
             ProviderFilter::MatchDefault(default_provider) => Some(vec![default_provider]),
         },
         source_kinds: Some(crate::resume_source_kinds(include_non_interactive)),

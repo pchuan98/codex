@@ -229,7 +229,6 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
-use ratatui::widgets::Block;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::Widget;
@@ -298,7 +297,6 @@ use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
-use crate::style::user_message_style;
 use codex_protocol::ThreadId;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
@@ -671,6 +669,7 @@ impl ChatComposer {
                 goal_status_indicator: None,
                 ide_context_active: false,
                 status_line_value: None,
+                status_line_right_value: None,
                 status_line_hyperlink_url: None,
                 status_line_enabled: false,
                 side_conversation_context_label: None,
@@ -1497,6 +1496,28 @@ impl ChatComposer {
             line.spans.push(vim_mode);
         }
         line
+    }
+
+    fn append_status_line_right_value(
+        &self,
+        line: Option<Line<'static>>,
+    ) -> Option<Line<'static>> {
+        if !self.footer.status_line_enabled {
+            return line;
+        }
+        let Some(status_line_right) = self.footer.status_line_right_value.clone() else {
+            return line;
+        };
+
+        if let Some(mut line) = line {
+            if line.width() > 0 {
+                line.spans.push(" | ".dim());
+            }
+            line.spans.extend(status_line_right.spans);
+            Some(line)
+        } else {
+            Some(status_line_right)
+        }
     }
 
     pub(crate) fn current_text_with_pending(&self) -> String {
@@ -4450,6 +4471,14 @@ impl ChatComposer {
         true
     }
 
+    pub(crate) fn set_status_line_right(&mut self, status_line: Option<Line<'static>>) -> bool {
+        if self.footer.status_line_right_value == status_line {
+            return false;
+        }
+        self.footer.status_line_right_value = status_line;
+        true
+    }
+
     pub(crate) fn set_status_line_hyperlink(&mut self, url: Option<String>) -> bool {
         if self.footer.status_line_hyperlink_url == url {
             return false;
@@ -4806,8 +4835,13 @@ impl ChatComposer {
                         } else if transition_active {
                             None
                         } else if status_line_active {
-                            let full = self.mode_indicator_line(show_cycle_hint);
-                            let compact = self.mode_indicator_line(/*show_cycle_hint*/ false);
+                            let full =
+                                self.append_status_line_right_value(
+                                    self.mode_indicator_line(show_cycle_hint),
+                                );
+                            let compact = self.append_status_line_right_value(
+                                self.mode_indicator_line(/*show_cycle_hint*/ false),
+                            );
                             let full_width = full.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                             if can_show_left_with_context(hint_rect, left_width, full_width) {
                                 full
@@ -4945,11 +4979,8 @@ impl ChatComposer {
                 }
             }
         }
-        let style = user_message_style();
-        Block::default().style(style).render(composer_rect, buf);
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.attachments.remote_image_lines())
-                .style(style)
                 .render(remote_images_rect, buf);
         }
         if !textarea_rect.is_empty() {

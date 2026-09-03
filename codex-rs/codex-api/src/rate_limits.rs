@@ -27,10 +27,6 @@ pub fn parse_default_rate_limit(headers: &HeaderMap) -> Option<RateLimitSnapshot
 /// Parses all known rate-limit header families into update records keyed by limit id.
 pub fn parse_all_rate_limits(headers: &HeaderMap) -> Vec<RateLimitSnapshot> {
     let mut snapshots = Vec::new();
-    if let Some(snapshot) = parse_default_rate_limit(headers) {
-        snapshots.push(snapshot);
-    }
-
     let mut limit_ids: BTreeSet<String> = BTreeSet::new();
 
     for name in headers.keys() {
@@ -46,6 +42,12 @@ pub fn parse_all_rate_limits(headers: &HeaderMap) -> Vec<RateLimitSnapshot> {
         let snapshot = parse_rate_limit_for_limit(headers, Some(limit_id.as_str()))?;
         has_rate_limit_data(&snapshot).then_some(snapshot)
     }));
+
+    // Session state currently stores one latest rate-limit snapshot. Keep the
+    // default Codex bucket last so model-specific buckets do not replace it.
+    if let Some(snapshot) = parse_default_rate_limit(headers) {
+        snapshots.push(snapshot);
+    }
 
     snapshots
 }

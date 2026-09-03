@@ -106,9 +106,6 @@ impl ChatComposer {
             return;
         }
         ratatui::widgets::Clear.render(area, buf);
-        Block::default()
-            .style(Style::reset().patch(user_message_style()))
-            .render(area, buf);
         let mut area = area;
         if self.footer.flash_visible()
             && let Some(flash) = &self.footer.flash

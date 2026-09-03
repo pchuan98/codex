@@ -648,6 +648,12 @@ pub(crate) enum AppEvent {
         result: Result<GetAccountRateLimitsResponse, String>,
     },
 
+    /// Async update of the custom footer status line's Git state.
+    CustomStatusLineGitStatusUpdated {
+        cwd: PathBuf,
+        status: Option<crate::chatwidget::CustomStatusLineGitStatus>,
+    },
+
     /// Open the default token-activity view selected from the `/usage` menu.
     OpenTokenActivity,
 
