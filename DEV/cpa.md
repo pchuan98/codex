@@ -42,7 +42,7 @@ CPA 已确认支持：
 - SSE 流式响应。
 - `x-codex-*` 额度响应头。
 
-`/responses/compact` 返回 `response.compaction`，因此 API 模式使用服务端远程压缩，不需要额外配置 compact 地址。
+Upstream update (2026-09-10): commits `3dc1e2a58` and `1ac689cc7` route remote compaction through streamed `/responses` requests containing `compaction_trigger` items and remove the legacy `/responses/compact` implementation. The previously confirmed `/responses/compact` response is no longer sufficient evidence of CPA compatibility. CPA support for the new streamed compaction protocol still requires verification; this sync did not send live requests to CPA.
 
 ## 会话恢复
 
