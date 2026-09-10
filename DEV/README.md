@@ -64,3 +64,4 @@ rebase 会改写 `dev` 的提交历史。确认结果后，如需更新 fork 的
 ```
 
 脚本只为当前进程设置 `CPA_API_KEY`，然后在 `codex-rs` 中执行 `cargo run --bin codex --`。Provider 和遥测参数与 CPA 启动器一致，不修改持久化配置。
+- `agents.md`：原生子代理独立 Provider、配置优先级和恢复行为。

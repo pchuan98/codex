@@ -1060,6 +1060,8 @@ pub struct Config {
 
     /// Settings specific to the task-path-based multi-agent tool surface.
     pub multi_agent_v2: MultiAgentV2Config,
+    /// Explicit false selects V1 instead of the model's advertised backend.
+    pub multi_agent_v2_explicitly_disabled: bool,
 
     /// Context-window token budget configuration, when enabled.
     pub token_budget: Option<TokenBudgetConfig>,
@@ -1554,6 +1556,12 @@ impl Config {
             Some(MultiAgentVersion::V2)
         } else if !self.agents_enabled {
             Some(MultiAgentVersion::Disabled)
+        } else if self.multi_agent_v2_explicitly_disabled {
+            Some(if self.features.enabled(Feature::Collab) {
+                MultiAgentVersion::V1
+            } else {
+                MultiAgentVersion::Disabled
+            })
         } else {
             None
         }
@@ -2090,7 +2098,7 @@ fn load_catalog_json(path: &AbsolutePathBuf) -> std::io::Result<ModelsResponse> 
     Ok(catalog)
 }
 
-fn load_model_catalog(
+pub(crate) fn load_model_catalog(
     model_catalog_json: Option<AbsolutePathBuf>,
 ) -> std::io::Result<Option<ModelsResponse>> {
     model_catalog_json
@@ -4351,6 +4359,12 @@ impl Config {
             thread_unload_delay,
             ghost_snapshot,
             multi_agent_v2,
+            multi_agent_v2_explicitly_disabled: cfg
+                .features
+                .as_ref()
+                .and_then(|features| features.multi_agent_v2.as_ref())
+                .and_then(FeatureToml::enabled)
+                == Some(false),
             token_budget,
             token_budget_startup_config: None,
             rollout_budget,

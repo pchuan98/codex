@@ -1920,7 +1920,7 @@ impl ThreadManagerState {
             user_shell_override,
         } = request;
         let StartThreadOptions {
-            config,
+            mut config,
             allow_provider_model_fallback,
             initial_history,
             history_mode,
@@ -2048,13 +2048,36 @@ impl ThreadManagerState {
         } else {
             codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile
         };
+        let models_manager = if session_source.is_non_root_agent() {
+            if let Some(parent_id) = parent_thread_id.or_else(|| session_source.parent_thread_id())
+                && let Ok(parent) = self.get_thread(parent_id).await
+            {
+                crate::agent::provider::models_manager_for_config(&parent.session, &config).await
+            } else {
+                let manager = build_models_manager(&config, auth_manager.clone());
+                manager
+                    .list_models(RefreshStrategy::OnlineIfUncached, config.http_client_factory())
+                    .await;
+                manager
+            }
+        } else {
+            Arc::clone(&self.models_manager)
+        };
+        if session_source.is_non_root_agent() {
+            crate::agent::provider::prepare_model_instructions(
+                &mut config,
+                &initial_history,
+                &models_manager,
+            )
+            .await;
+        }
         let (session, io) = Session::spawn(SessionSpawnArgs {
             config,
             allow_provider_model_fallback,
             user_instructions,
             installation_id: self.installation_id.clone(),
             auth_manager,
-            models_manager: Arc::clone(&self.models_manager),
+            models_manager,
             git_root_discovery: Arc::clone(&self.git_root_discovery),
             environment_manager: Arc::clone(&self.environment_manager),
             skills_service: Arc::clone(&self.skills_service),

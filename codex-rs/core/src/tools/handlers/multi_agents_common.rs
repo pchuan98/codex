@@ -1,3 +1,4 @@
+use crate::agent::provider::models_manager_for_config;
 use crate::agent::role::apply_role_to_config;
 use crate::config::Config;
 use crate::config::DEFAULT_MULTI_AGENT_V2_MIN_WAIT_TIMEOUT_MS;
@@ -340,9 +341,8 @@ pub(crate) async fn apply_spawn_agent_service_tier(
             "spawn_agent could not resolve the child model for service tier validation".to_string(),
         )
     })?;
-    let model_info = session
-        .services
-        .models_manager
+    let model_info = models_manager_for_config(session, config)
+        .await
         .get_model_info(model.as_str(), &config.to_models_manager_config())
         .await;
 
@@ -358,11 +358,14 @@ pub(crate) async fn apply_spawn_agent_role(
     role_name: Option<&str>,
 ) -> Result<(), FunctionCallError> {
     let previous_model = config.model.clone();
+    let previous_provider = config.model_provider.clone();
     let previous_reasoning_effort = config.model_reasoning_effort.clone();
     apply_role_to_config(config, role_name)
         .await
         .map_err(FunctionCallError::RespondToModel)?;
-    if config.model == previous_model && config.model_reasoning_effort == previous_reasoning_effort
+    if config.model == previous_model
+        && config.model_reasoning_effort == previous_reasoning_effort
+        && config.model_provider == previous_provider
     {
         return Ok(());
     }
@@ -376,9 +379,8 @@ pub(crate) async fn apply_spawn_agent_role(
                 .to_string(),
         )
     })?;
-    let model_info = session
-        .services
-        .models_manager
+    let model_info = models_manager_for_config(session, config)
+        .await
         .get_model_info(&model, &config.to_models_manager_config())
         .await;
     if model_info.used_fallback_model_metadata {

@@ -108,6 +108,14 @@ async fn handle_spawn_agent(
     apply_spawn_agent_service_tier(&session, &mut config).await?;
     apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
 
+    let persisted_role_name = role_name.or_else(|| {
+        (!args.fork_context
+            && config
+                .agent_roles
+                .get(DEFAULT_ROLE_NAME)
+                .is_some_and(|role| role.config_file.is_some()))
+        .then_some(DEFAULT_ROLE_NAME)
+    });
     let result = Box::pin(session.services.agent_control.spawn_agent_with_metadata(
         config,
         input_items,
@@ -115,7 +123,7 @@ async fn handle_spawn_agent(
             session.thread_id,
             &turn.session_source,
             child_depth,
-            role_name,
+            persisted_role_name,
             /*task_name*/ None,
         )?),
         SpawnAgentOptions {

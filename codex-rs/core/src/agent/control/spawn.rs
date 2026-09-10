@@ -397,7 +397,6 @@ impl AgentControl {
                 return Ok(());
             }
         }
-        config.model_reasoning_effort = stored_reasoning_effort;
         if let Some(role_name) = session_source.get_agent_role() {
             let runtime_approval_policy = config.permissions.approval_policy.value();
             let runtime_approvals_reviewer = config.approvals_reviewer;
@@ -438,17 +437,10 @@ impl AgentControl {
         if let Some(model) = stored_model {
             config.model = Some(model);
         }
+        config.model_reasoning_effort = stored_reasoning_effort;
         if config.model_provider_id != stored_model_provider {
-            config.model_provider = config
-                .model_providers
-                .get(&stored_model_provider)
-                .cloned()
-                .ok_or_else(|| {
-                    CodexErr::InvalidRequest(format!(
-                        "Model provider `{stored_model_provider}` not found"
-                    ))
-                })?;
-            config.model_provider_id = stored_model_provider;
+            crate::agent::provider::select_provider(&mut config, &stored_model_provider)
+                .map_err(|err| CodexErr::InvalidRequest(err.to_string()))?;
         }
         let parent_thread_id = owner_thread_id
             .or_else(|| initial_history.get_resumed_parent_thread_id())
@@ -1213,6 +1205,26 @@ impl AgentControl {
                 include_history: false,
             })
             .await?;
+        let mut config = if let Some(parent_id) = stored_thread.parent_thread_id
+            && let Ok(parent) = state.get_thread(parent_id).await
+        {
+            let turn = parent.session.new_default_turn().await;
+            build_agent_resume_config(&turn)
+                .map_err(|err| CodexErr::InvalidRequest(err.to_string()))?
+        } else {
+            config
+        };
+        if let Some(role) = stored_thread.agent_role.as_deref() {
+            apply_role_to_config(&mut config, Some(role))
+                .await
+                .map_err(CodexErr::InvalidRequest)?;
+        }
+        if config.model_provider_id != stored_thread.model_provider {
+            crate::agent::provider::select_provider(&mut config, &stored_thread.model_provider)
+                .map_err(|err| CodexErr::InvalidRequest(err.to_string()))?;
+        }
+        config.model = stored_thread.model.clone().or(config.model);
+        config.model_reasoning_effort = stored_thread.reasoning_effort.clone();
         let resumed_agent_path = stored_thread
             .agent_path
             .as_deref()

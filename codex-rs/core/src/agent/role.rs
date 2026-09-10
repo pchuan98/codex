@@ -37,6 +37,12 @@ const AGENT_TYPE_UNAVAILABLE_ERROR: &str = "agent type is currently not availabl
 struct AgentRoleOverrides {
     developer_instructions: Option<String>,
     model: Option<String>,
+    model_provider: Option<String>,
+    model_catalog_json: Option<codex_utils_absolute_path::AbsolutePathBuf>,
+    model_context_window: Option<i64>,
+    model_auto_compact_token_limit: Option<i64>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    model_providers: BTreeMap<String, codex_model_provider_info::ModelProviderInfo>,
     model_reasoning_effort: Option<ReasoningEffort>,
     model_reasoning_summary: Option<ReasoningSummary>,
     model_verbosity: Option<Verbosity>,
@@ -62,7 +68,10 @@ pub(crate) async fn apply_role_to_config(
         .await
         .map_err(|err| {
             tracing::warn!("failed to apply role to config: {err}");
-            AGENT_TYPE_UNAVAILABLE_ERROR.to_string()
+            if let Some(err) = err.downcast_ref::<super::provider::ProviderSelectionError>() {
+                return err.to_string();
+            }
+            format!("{AGENT_TYPE_UNAVAILABLE_ERROR}: failed to read or validate configuration for `{role_name}`")
         })
 }
 
@@ -80,6 +89,11 @@ async fn apply_role_to_config_inner(
     let mut overrides = AgentRoleOverrides {
         developer_instructions: role_config.developer_instructions,
         model: role_config.model,
+        model_provider: role_config.model_provider,
+        model_catalog_json: role_config.model_catalog_json,
+        model_context_window: role_config.model_context_window,
+        model_auto_compact_token_limit: role_config.model_auto_compact_token_limit,
+        model_providers: role_config.model_providers.into_iter().collect(),
         model_reasoning_effort: role_config.model_reasoning_effort,
         model_reasoning_summary: role_config.model_reasoning_summary,
         model_verbosity: role_config.model_verbosity,
@@ -181,7 +195,53 @@ mod role_overrides {
         overrides: &AgentRoleOverrides,
     ) -> anyhow::Result<Config> {
         let mut next_config = config.clone();
-        next_config.config_layer_stack = build_config_layer_stack(config, &role_layer_toml)?;
+        // A role definition replaces the whole named provider; credentials and headers
+        // must not be accidentally merged with the parent's endpoint configuration.
+        let built_ins = codex_model_provider_info::built_in_model_providers(/*openai_base_url*/ None);
+        for id in overrides.model_providers.keys() {
+            if !built_ins.contains_key(id) {
+                next_config.model_providers.remove(id);
+            }
+        }
+        next_config.model_providers = codex_model_provider_info::merge_configured_model_providers(
+            next_config.model_providers,
+            overrides.model_providers.clone().into_iter().collect(),
+        )
+        .map_err(super::super::provider::ProviderSelectionError)?;
+        if let Some(provider_id) = &overrides.model_provider {
+            super::super::provider::select_provider(&mut next_config, provider_id)?;
+        } else if overrides
+            .model_providers
+            .contains_key(&config.model_provider_id)
+            && next_config.model_providers.get(&config.model_provider_id) != Some(&config.model_provider)
+        {
+            return Err(super::super::provider::ProviderSelectionError(
+                "Changing the inherited provider definition requires an explicit model_provider selection".to_string(),
+            )
+            .into());
+        }
+        if overrides.model_catalog_json.is_some() {
+            if let Some(required) = config
+                .config_layer_stack
+                .requirements()
+                .model_catalog_json
+                .as_ref()
+                && overrides.model_catalog_json.as_ref() != Some(&required.value)
+            {
+                return Err(super::super::provider::ProviderSelectionError(
+                    "Agent cannot override required model_catalog_json".to_string(),
+                )
+                .into());
+            }
+            next_config.model_catalog =
+                crate::config::load_model_catalog(overrides.model_catalog_json.clone())?;
+        }
+        if let Some(window) = overrides.model_context_window {
+            next_config.model_context_window = Some(window);
+        }
+        if let Some(limit) = overrides.model_auto_compact_token_limit {
+            next_config.model_auto_compact_token_limit = Some(limit);
+        }
         if let Some(model) = &overrides.model {
             next_config.model = Some(model.clone());
         }
@@ -234,18 +294,37 @@ mod role_overrides {
             next_config.base_instructions = None;
             next_config.base_instructions_provenance = None;
         }
+        next_config.config_layer_stack =
+            build_config_layer_stack(config, &role_layer_toml, &next_config)?;
         Ok(next_config)
     }
 
     fn build_config_layer_stack(
         config: &Config,
         role_layer_toml: &TomlValue,
+        next_config: &Config,
     ) -> anyhow::Result<ConfigLayerStack> {
         let mut layers: Vec<_> = config
             .config_layer_stack
             .all_layers_low_to_high()
             .cloned()
             .collect();
+        for layer in &layers {
+            if !layer.is_disabled() && layer.name > ConfigLayerSource::SessionFlags {
+                for key in ["model_provider", "model_providers", "model_catalog_json"] {
+                    if role_layer_toml.get(key).is_some()
+                        && layer.config.get(key).is_some()
+                        && role_layer_toml.get(key) != layer.config.get(key)
+                    {
+                        return Err(super::super::provider::ProviderSelectionError(
+                            format!("Agent cannot override managed `{key}` configuration"),
+                        )
+                        .into());
+                    }
+                }
+            }
+        }
+        super::super::provider::project_role_layers(&mut layers, role_layer_toml, config, next_config);
         let role_layer =
             ConfigLayerEntry::new(ConfigLayerSource::SessionFlags, role_layer_toml.clone());
         let insertion_index = layers.partition_point(|layer| layer.name <= role_layer.name);
