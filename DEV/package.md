@@ -41,6 +41,17 @@
 
 平台包和主调用包必须使用相同的 `-PackageVersion`。仓库级入口会先让底层平台打包器选择版本，再自动将该版本传给主调用包。Cargo 输出默认位于 `codex-rs/target/cpa-pack/<target>`；显式传入 `-TargetDirectory` 时，它表示该平台的 Cargo 输出目录。
 
+Both pack entry points and `build.ps1` resolve the Cargo output directory in this
+order: explicit `-TargetDirectory` (`--d` for build), `CARGO_TARGET_DIR`, then the
+script's default directory. The environment path is used directly, without adding
+a platform subdirectory. This affects build artifacts and caches; npm archives
+still use `-OutputDirectory` or the default `DEV/scripts/npm/dist`.
+
+```powershell
+$env:CARGO_TARGET_DIR = 'D:\.codex'
+.\DEV\scripts\pack.ps1 -DebugBuild
+```
+
 第一次使用某个 Linux 目标时，`DEV/scripts/docker.ps1` 自动拉取 Debian 镜像并创建带 PowerShell、Rust 1.95、Node/npm 和原生依赖的缓存镜像；Dockerfile 变化时自动生成新的缓存镜像。APT 使用清华镜像，Rust toolchain 和 crates.io 使用 RsProxy。npm 上游版本查询和发布仍指定官方 registry。Linux ARM64 在 Windows x64 上通过 Docker 平台模拟，缺少模拟支持时脚本会通过 `tonistiigi/binfmt` 自动安装，因此编译时间会更长。
 
 打包脚本会检查 Git 的 `upstream` remote。不存在时自动添加 `https://github.com/openai/codex`；已存在时必须指向该官方仓库，URL 末尾是否包含 `.git` 或 `/` 不影响判断。
@@ -77,7 +88,18 @@ cpa-set context 256k
 -c model_context_window=256000
 ```
 
-不带参数执行 `cpa-set context` 会删除自定义窗口并恢复 Codex 默认值，此时启动器不传递 `model_context_window`。当前上限与 Codex 内置 GPT-5.6 模型的 `max_context_window` 一致，为 `872k`；自动压缩阈值由 Codex 根据窗口自动计算。
+不带参数执行 `cpa-set context` 会删除自定义窗口和实验模式设置并恢复 Codex 默认值，此时启动器不传递 `model_context_window` 或实验上下文开关。当前上限与 Codex 内置 GPT-5.6 模型的 `max_context_window` 一致，为 `872k`；自动压缩阈值由 Codex 根据窗口自动计算。
+
+Use `cpa-set context exp` to persist `context_mode = "exp"`. The launcher then
+passes `-c features.context_management.experimental_mode=true` to Codex.
+Use `cpa-set context default` to remove this override while retaining any custom
+window size. An unset mode also adds no feature override, so existing Codex
+configuration and defaults apply; it does not force the feature off.
+The mode and numeric window are independent: `cpa-set context 256k` changes only
+the size, and `cpa-set context` resets both. Explicit arguments passed to `cpa`
+follow launcher defaults and can override them for that invocation.
+This setting also applies when the CPA provider is disabled. Model and backend
+requirements are described in `DEV/cpa.md`.
 
 使用 `cpa-set provider true` 启用 CPA Provider，这是默认行为。使用 `cpa-set provider false` 后，启动器不再注入 `model_provider` 和 `model_providers.cpa.*` 参数，不再要求配置 CPA API Key，也不会把 `cpa.toml` 中持久化的密钥注入子进程。上下文窗口是独立设置，仍会按配置传递。
 

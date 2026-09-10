@@ -52,6 +52,12 @@ $env:RUSTY_V8_SRC_BINDING_PATH = $rustyV8Binding
 
 一次编译两个程序：
 
+The build script first uses the matching V8 archive from the Cargo target
+directory, then an existing `RUSTY_V8_ARCHIVE` override, and finally the default
+release URL. For offline or proxy-assisted downloads, place the exact archive
+filename beside the binding file in that directory. The selected archive path
+or URL is printed before compilation.
+
 ```powershell
 cargo build --bin codex --bin codex-code-mode-host
 ```

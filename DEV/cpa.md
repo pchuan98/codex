@@ -44,6 +44,41 @@ CPA 已确认支持：
 
 Upstream update (2026-09-10): commits `3dc1e2a58` and `1ac689cc7` route remote compaction through streamed `/responses` requests containing `compaction_trigger` items and remove the legacy `/responses/compact` implementation. The previously confirmed `/responses/compact` response is no longer sufficient evidence of CPA compatibility. CPA support for the new streamed compaction protocol still requires verification; this sync did not send live requests to CPA.
 
+## Experimental context management in API mode
+
+The fork allows API providers to activate history/notes without a ChatGPT login:
+
+```toml
+[features.context_management]
+experimental_mode = true
+```
+
+Keep the CPA provider configuration above, including `name = "OpenAI"`. Activation
+still requires model metadata with `supports_experimental_context = true` and
+respects managed restrictions on the token-budget feature. The bundled catalog
+currently declares this capability for `gpt-6-astra`. Other model IDs are not
+automatically opted in.
+
+API mode skips the ChatGPT subscription and `/backend-api/codex` URL checks.
+History/notes requests reuse the active model provider's base URL and credential
+resolution, including `CPA_API_KEY`; no ChatGPT credential is synthesized. For
+the example base URL, requests target `/v1/alpha/history/v2/*` and
+`/v1/alpha/notes/v2/*`. The server must implement these routes and the model's
+context-management protocol. Client activation alone does not establish end-to-end
+compatibility. ChatGPT login mode retains the upstream subscription eligibility.
+
+Implementation: `core/src/session/token_budget.rs` activates the token budget and
+history/notes; `ext/history-notes/src/extension.rs` registers the extension without
+requiring Codex-backend login. Both retain the OpenAI provider-name check and
+exclude AWS providers. Recheck these gates and provider authentication during
+future upstream rebases.
+
+Initial code validation was static only; no tests, snapshots, or formatters were
+run or modified. During the subsequent September 10 deployment session, the
+refreshed CPA catalog advertised the capability and live history/notes requests
+completed successfully. This confirms the observed session path, not all
+protocol or multi-account behavior.
+
 ## 会话恢复
 
 Resume picker 不按 Provider 过滤。切换到 `cpa` 后仍显示其他 Provider 创建的本地会话。

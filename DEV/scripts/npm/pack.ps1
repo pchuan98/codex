@@ -14,6 +14,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    $TargetDirectory = $env:CARGO_TARGET_DIR
+}
 $registry = 'https://registry.npmjs.org/'
 
 function Write-Step([string]$Message) {

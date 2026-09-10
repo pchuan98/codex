@@ -85,6 +85,12 @@ export function readConfig() {
     }
     if (key === "api_key") {
       config.api_key = parseTomlString(value, key);
+    } else if (key === "context_mode") {
+      const mode = parseTomlString(value, key);
+      if (mode !== "exp" && mode !== "default") {
+        throw new Error(`${key} in ${configPath} must be 'exp' or 'default'.`);
+      }
+      config.context_mode = mode;
     } else if (key === "context_window") {
       const integerMatch = /^(\d(?:_?\d)*)\s*(?:#.*)?$/u.exec(value);
       if (!integerMatch) {
@@ -126,6 +132,9 @@ function writeConfig(config) {
   }
   if (config.context_window !== undefined) {
     lines.push(`context_window = ${config.context_window}`);
+  }
+  if (config.context_mode === "exp") {
+    lines.push('context_mode = "exp"');
   }
   lines.push(`provider_enabled = ${config.provider_enabled !== false}`);
   lines.push(`yolo_enabled = ${config.yolo_enabled !== false}`);
@@ -177,8 +186,19 @@ export function writeContextWindow(contextWindow) {
   const config = readConfig();
   if (contextWindow === undefined) {
     delete config.context_window;
+    delete config.context_mode;
   } else {
     config.context_window = contextWindow;
+  }
+  writeConfig(config);
+}
+
+export function writeContextMode(mode) {
+  const config = readConfig();
+  if (mode === "exp") {
+    config.context_mode = mode;
+  } else {
+    delete config.context_mode;
   }
   writeConfig(config);
 }

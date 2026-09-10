@@ -50,6 +50,10 @@ if (-not $BuildCodex -and -not $BuildHost) {
     throw 'Select at least one build target with --codex or --host.'
 }
 
+if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    $TargetDirectory = $env:CARGO_TARGET_DIR
+}
+
 $isWindowsPlatform = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
     [System.Runtime.InteropServices.OSPlatform]::Windows
 )
@@ -143,7 +147,13 @@ $archiveName = if ($isWindowsPlatform) {
 } else {
     "librusty_v8_ptrcomp_sandbox_release_$rustHost.a.gz"
 }
-$env:RUSTY_V8_ARCHIVE = "$v8ReleaseBase/$archiveName"
+$localArchivePath = Join-Path $targetPath $archiveName
+if (Test-Path -LiteralPath $localArchivePath -PathType Leaf) {
+    $env:RUSTY_V8_ARCHIVE = $localArchivePath
+} elseif ([string]::IsNullOrWhiteSpace($env:RUSTY_V8_ARCHIVE)) {
+    $env:RUSTY_V8_ARCHIVE = "$v8ReleaseBase/$archiveName"
+}
+Write-Host "V8 archive: $env:RUSTY_V8_ARCHIVE"
 $env:RUSTY_V8_SRC_BINDING_PATH = $bindingPath
 
 $env:CARGO_TARGET_DIR = $targetPath

@@ -73,6 +73,9 @@ const contextWindow = config.context_window;
 const contextArguments = contextWindow
   ? ["-c", `model_context_window=${contextWindow}`]
   : [];
+if (config.context_mode === "exp") {
+  contextArguments.push("-c", "features.context_management.experimental_mode=true");
+}
 
 const providerArguments = providerEnabled
   ? [

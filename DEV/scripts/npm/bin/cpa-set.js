@@ -9,6 +9,7 @@ import {
   readSecret,
   writeStoredApiKey,
   writeContextWindow,
+  writeContextMode,
   writeProviderEnabled,
   writeYoloEnabled,
 } from "./config.js";
@@ -31,7 +32,7 @@ Usage:
 
 Commands:
   api-key [API_KEY]       Save an API key; prompts securely when omitted
-  context [SIZE]          Set context size (for example 256k); omit to reset
+  context [exp|default|SIZE]  Set context mode or size (256k); omit to reset both
   provider <true|false>   Enable or disable the CPA model provider
   yolo <true|false>       Enable or disable automatic --yolo
   show                    Show the current configuration with the key masked
@@ -88,10 +89,16 @@ async function main() {
 
   if (command === "context") {
     if (commandArguments.length > 1) {
-      usageError("The context command accepts at most one size.");
+      usageError("The context command accepts at most one mode or size.");
     }
 
     const size = commandArguments[0];
+    if (size === "exp" || size === "default") {
+      writeContextMode(size);
+      console.log(`CPA context mode set to ${size}.`);
+      console.log(`CPA config saved to ${configPath}`);
+      return;
+    }
     if (size === undefined) {
       writeContextWindow(undefined);
       console.log("CPA context restored to the Codex default.");
@@ -101,7 +108,7 @@ async function main() {
 
     const match = /^(\d+)k$/iu.exec(size);
     if (!match) {
-      usageError("Context size must use the '<number>k' format, for example '256k'.");
+      usageError("Context must be 'exp', 'default', or a size such as '256k'.");
     }
     const contextWindow = Number(match[1]) * 1000;
     if (!Number.isSafeInteger(contextWindow) || contextWindow <= 0) {
@@ -158,6 +165,7 @@ async function main() {
     const config = readConfig();
     console.log(`Config: ${configPath}`);
     console.log(`API key: ${maskedApiKey(config.api_key)}`);
+    console.log(`Context mode: ${config.context_mode ?? "default"}`);
     console.log(
       `Context: ${config.context_window === undefined ? "default" : `${config.context_window / 1000}k`}`,
     );

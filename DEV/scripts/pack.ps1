@@ -8,6 +8,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+if ([string]::IsNullOrWhiteSpace($TargetDirectory)) {
+    $TargetDirectory = $env:CARGO_TARGET_DIR
+}
+
 function Write-Step([string]$Message) {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
