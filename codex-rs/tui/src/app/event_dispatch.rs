@@ -1793,6 +1793,14 @@ impl App {
                     self.chat_widget.finish_rate_limit_recovery();
                 }
             },
+            AppEvent::CustomStatusLineGitStatusUpdated { cwd, status } => {
+                if self
+                    .chat_widget
+                    .finish_custom_status_line_git_status_refresh(cwd, status)
+                {
+                    tui.frame_requester().schedule_frame();
+                }
+            }
             AppEvent::OpenAnalytics { view: summary_view } => {
                 tui.enter_alt_screen()?;
                 let mut view = self.retained_analytics.take().unwrap_or_else(|| {

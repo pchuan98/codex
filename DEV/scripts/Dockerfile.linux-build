@@ -1,0 +1,93 @@
+FROM debian:bookworm-slim
+
+ARG TARGETARCH
+ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+ARG RUSTUP_DIST_SERVER=https://rsproxy.cn
+ARG RUSTUP_UPDATE_ROOT=https://rsproxy.cn/rustup
+ARG POWERSHELL_VERSION=7.5.7
+ARG NODE_VERSION=24.13.0
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    RUSTUP_DIST_SERVER=${RUSTUP_DIST_SERVER} \
+    RUSTUP_UPDATE_ROOT=${RUSTUP_UPDATE_ROOT} \
+    PATH=/root/.cargo/bin:${PATH}
+
+RUN set -eux; \
+    apt_mirror_http="http://${APT_MIRROR#*://}"; \
+    sed -i \
+        -e "s|http://deb.debian.org/debian|${apt_mirror_http}/debian|g" \
+        -e "s|http://security.debian.org/debian-security|${apt_mirror_http}/debian-security|g" \
+        /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates; \
+    sed -i "s|${apt_mirror_http}|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        libcap-dev \
+        libicu72 \
+        libssl3 \
+        libssl-dev \
+        libunwind8 \
+        pkg-config \
+        xz-utils \
+        zlib1g; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+        amd64) \
+            powershell_arch=x64; \
+            powershell_sha256=207A3C0B2F630E8E1226CC9BEB651E2E16789F07729197F45FD3AD0902D1C593; \
+            node_arch=x64; \
+            node_sha256=e798599612f4bb71333a3397ab0d095fd62214e115aea45aa858a145fc72d67e \
+            ;; \
+        arm64) \
+            powershell_arch=arm64; \
+            powershell_sha256=8EB84FAECD4834F4B961A6601C28C0C61A620A43F005E977F546B89E1E0F1AA2; \
+            node_arch=arm64; \
+            node_sha256=aa881151bd0f9f154a0424dd60a72e9ce10672619121658c278a24327ef46831 \
+            ;; \
+        *) \
+            echo "Unsupported Docker architecture: ${TARGETARCH}" >&2; \
+            exit 1 \
+            ;; \
+    esac; \
+    powershell_archive="powershell-${POWERSHELL_VERSION}-linux-${powershell_arch}.tar.gz"; \
+    curl -fsSL \
+        "https://github.com/PowerShell/PowerShell/releases/download/v${POWERSHELL_VERSION}/${powershell_archive}" \
+        -o "/tmp/${powershell_archive}"; \
+    echo "${powershell_sha256}  /tmp/${powershell_archive}" | sha256sum -c -; \
+    mkdir -p /opt/microsoft/powershell/7; \
+    tar -xzf "/tmp/${powershell_archive}" -C /opt/microsoft/powershell/7; \
+    chmod +x /opt/microsoft/powershell/7/pwsh; \
+    ln -s /opt/microsoft/powershell/7/pwsh /usr/local/bin/pwsh; \
+    rm "/tmp/${powershell_archive}"; \
+    node_archive="node-v${NODE_VERSION}-linux-${node_arch}.tar.xz"; \
+    curl -fsSL \
+        "https://nodejs.org/dist/v${NODE_VERSION}/${node_archive}" \
+        -o "/tmp/${node_archive}"; \
+    echo "${node_sha256}  /tmp/${node_archive}" | sha256sum -c -; \
+    tar -xJf "/tmp/${node_archive}" -C /usr/local --strip-components=1; \
+    rm "/tmp/${node_archive}"
+
+RUN set -eux; \
+    curl --proto '=https' --tlsv1.2 -sSf https://rsproxy.cn/rustup-init.sh \
+        | sh -s -- -y --profile minimal --default-toolchain 1.95.0; \
+    rustup component add clippy rustfmt rust-src --toolchain 1.95.0; \
+    mkdir -p /root/.cargo; \
+    printf '%s\n' \
+        '[source.crates-io]' \
+        "replace-with = 'rsproxy-sparse'" \
+        '' \
+        '[source.rsproxy-sparse]' \
+        'registry = "sparse+https://rsproxy.cn/index/"' \
+        '' \
+        '[net]' \
+        'git-fetch-with-cli = true' \
+        > /root/.cargo/config.toml; \
+    git config --global --add safe.directory /workspace
+
+WORKDIR /workspace

@@ -149,6 +149,7 @@ impl ChatWidget {
         self.flush_unified_exec_wait_streak();
         self.flush_completed_tool_activity();
         if !from_replay {
+            self.finish_custom_status_line_turn();
             self.collect_runtime_metrics_delta();
         }
         let runtime_metrics = (!from_replay && !self.turn_runtime_metrics.is_empty())

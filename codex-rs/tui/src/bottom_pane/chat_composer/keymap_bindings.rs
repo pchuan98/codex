@@ -53,8 +53,8 @@ impl ChatComposer {
                 .map(ShortcutHint::from),
             };
         self.footer.queue_key = keymap.primary_hint(KeymapContext::Composer, "queue");
-        self.footer.toggle_shortcuts_key =
-            keymap.primary_hint(KeymapContext::Composer, "toggle_shortcuts");
+        // Keep the shortcut binding active without advertising it in the idle footer.
+        self.footer.toggle_shortcuts_key = None;
         self.footer.history_search_key =
             keymap.primary_hint(KeymapContext::Composer, "history_search_previous");
         self.footer.reasoning_down_key =

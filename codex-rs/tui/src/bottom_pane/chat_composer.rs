@@ -304,7 +304,6 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
-use ratatui::widgets::Block;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::StatefulWidgetRef;
 use ratatui::widgets::Widget;
@@ -372,7 +371,6 @@ use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
-use crate::style::user_message_style;
 use codex_protocol::ThreadId;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
@@ -382,6 +380,7 @@ mod agents_navigation;
 mod attachment_state;
 mod completion_target;
 mod composer_layout;
+mod custom_status_line;
 mod draft_state;
 mod footer_state;
 mod history_search;
@@ -760,6 +759,7 @@ impl ChatComposer {
                 goal_status_indicator: None,
                 ide_context_active: false,
                 status_line_value: None,
+                status_line_right_value: None,
                 status_line_hyperlink_url: None,
                 status_line_enabled: false,
                 side_conversation_context_label: None,
@@ -781,8 +781,7 @@ impl ChatComposer {
                 )
                 .map(ShortcutHint::from),
                 queue_key: default_keymap.primary_hint(KeymapContext::Composer, "queue"),
-                toggle_shortcuts_key: default_keymap
-                    .primary_hint(KeymapContext::Composer, "toggle_shortcuts"),
+                toggle_shortcuts_key: None,
                 history_search_key: default_keymap
                     .primary_hint(KeymapContext::Composer, "history_search_previous"),
                 reasoning_down_key: default_keymap
@@ -4759,8 +4758,13 @@ impl ChatComposer {
                         } else if self.status_surface_height(options) > 0 || transition_active {
                             None
                         } else if status_line_active {
-                            let full = self.mode_indicator_line(show_cycle_hint);
-                            let compact = self.mode_indicator_line(/*show_cycle_hint*/ false);
+                            let full =
+                                self.append_status_line_right_value(
+                                    self.mode_indicator_line(show_cycle_hint),
+                                );
+                            let compact = self.append_status_line_right_value(
+                                self.mode_indicator_line(/*show_cycle_hint*/ false),
+                            );
                             let full_width = full.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                             if can_show_left_with_context(hint_rect, left_width, full_width) {
                                 full
@@ -4902,11 +4906,8 @@ impl ChatComposer {
         if let Some((warning_area, line)) = warning_notice {
             line.render(warning_area, buf);
         }
-        let style = user_message_style();
-        Block::default().style(style).render(composer_rect, buf);
         if !remote_images_rect.is_empty() {
             Paragraph::new(self.attachments.remote_image_lines())
-                .style(style)
                 .render(remote_images_rect, buf);
         }
         if !textarea_rect.is_empty() {

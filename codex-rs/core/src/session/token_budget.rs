@@ -24,17 +24,21 @@ pub(super) fn apply_experimental_context(
     starting_model: &ModelInfo,
 ) -> std::io::Result<()> {
     let provider = &config.model_provider;
-    if !config.features.enabled(Feature::ContextManagement)
-        || !starting_model.supports_experimental_context
-        || !provider.supports_codex_backend_routes()
-        || !provider.requires_openai_auth
+    // API providers reuse their configured endpoint and credentials for history/notes.
+    let uses_api_auth = !provider.requires_openai_auth
         || provider.env_key.is_some()
         || provider.experimental_bearer_token.is_some()
         || provider.auth.is_some()
-        || provider.aws.is_some()
-        || !auth.is_some_and(|auth| {
+        || auth.is_some_and(|auth| auth.auth_mode() == AuthMode::ApiKey);
+    let eligible_chatgpt = provider.supports_codex_backend_routes()
+        && auth.is_some_and(|auth| {
             experimental_context_is_eligible(auth.auth_mode(), auth.account_plan_type())
-        })
+        });
+    if !config.features.enabled(Feature::ContextManagement)
+        || !starting_model.supports_experimental_context
+        || !provider.is_openai()
+        || provider.aws.is_some()
+        || !(uses_api_auth || eligible_chatgpt)
         || config.features.enable(Feature::TokenBudget).is_err()
         || !config.features.enabled(Feature::TokenBudget)
     {

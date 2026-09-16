@@ -206,6 +206,7 @@ impl ChatWidget {
         if self.active_mode_kind() != ModeKind::Plan {
             return;
         }
+        self.record_custom_status_line_delta(&delta);
         if !self.transcript.plan_item_active {
             self.transcript.plan_item_active = true;
             self.transcript.plan_delta_buffer.clear();
@@ -300,6 +301,7 @@ impl ChatWidget {
     }
 
     pub(super) fn on_agent_reasoning_delta(&mut self, delta: String) {
+        self.record_custom_status_line_delta(&delta);
         // Accumulate the current reasoning block for history and activity text.
         self.reasoning_buffer.push_str(&delta);
 
@@ -571,6 +573,7 @@ impl ChatWidget {
 
     #[inline]
     pub(super) fn handle_streaming_delta(&mut self, delta: String) {
+        self.record_custom_status_line_delta(&delta);
         if !delta.is_empty() {
             self.mark_safety_buffering_agent_message_started();
         }
