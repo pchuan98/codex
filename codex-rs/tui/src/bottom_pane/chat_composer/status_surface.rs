@@ -98,7 +98,7 @@ impl ChatComposer {
         props
     }
 
-    fn status_line_layout(
+    pub(super) fn status_line_layout(
         &self,
         area: Rect,
         options: ComposerRenderOptions<'_>,
@@ -117,23 +117,25 @@ impl ChatComposer {
             } else {
                 self.footer.collaboration_mode_indicator.is_some()
             };
-        let right = if !options.separate_status_line
+        let right = if options.unfocused {
+            self.append_status_line_right_value(None)
+        } else if !options.separate_status_line
             && let Some(label) = &self.footer.side_conversation_context_label
         {
-            Some(side_conversation_context_line(label))
+            self.append_status_line_right_value(Some(side_conversation_context_line(label)))
         } else if !options.separate_status_line
             && let Some(shell) = self.shell_mode_footer_line()
         {
-            Some(shell)
+            self.append_status_line_right_value(Some(shell))
         } else if !options.separate_status_line
             && self
                 .effort_status_line_transition
                 .as_ref()
                 .is_some_and(|transition| !transition.is_finished())
         {
-            None
+            self.append_status_line_right_value(None)
         } else {
-            let full = self.mode_indicator_line(show_cycle_hint);
+            let full = self.append_status_line_right_value(self.mode_indicator_line(show_cycle_hint));
             let full_fits = full.as_ref().is_none_or(|right| {
                 let right_width = right.width() as u16;
                 (!options.separate_status_line || right_width <= inset_footer_hint_area(area).width)
@@ -142,8 +144,16 @@ impl ChatComposer {
             if full_fits {
                 full
             } else {
-                self.mode_indicator_line(/*show_cycle_hint*/ false)
+                self.append_status_line_right_value(
+                    self.mode_indicator_line(/*show_cycle_hint*/ false),
+                )
             }
+        };
+        let right = match right {
+            Some(line) if line.width() > usize::from(inset_footer_hint_area(area).width) => {
+                self.append_status_line_right_value(None)
+            }
+            right => right,
         };
         let right_width = right
             .as_ref()
@@ -168,12 +178,21 @@ impl ChatComposer {
             return;
         }
         if options.unfocused {
-            if let Some(content) = self.status_line_content() {
+            let content = self.status_line_content();
+            let left_width = content.map_or(/*default*/ 0, FooterContent::width);
+            let (right, width) = self.status_line_layout(area, options, left_width);
+            if let Some(content) = content {
                 crate::bottom_pane::footer::render_unfocused_status(
                     content.clone().into_hyperlink_line().line.to_string(),
-                    area,
+                    Rect {
+                        width: width.saturating_add(FOOTER_INDENT_COLS as u16).min(area.width),
+                        ..area
+                    },
                     buf,
                 );
+            }
+            if let Some(right) = right {
+                render_context_right(area, buf, &right);
             }
             return;
         }

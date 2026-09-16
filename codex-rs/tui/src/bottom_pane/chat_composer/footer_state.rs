@@ -116,9 +116,8 @@ impl super::ChatComposer {
             status_line_value: self.footer.status_line_value.clone(),
             status_line_enabled: self.footer.status_line_enabled,
             key_hints: FooterKeyHints {
-                agents: self
-                    .agents_navigation_available()
-                    .then_some(key_hint::plain(KeyCode::Left).into()),
+                // Hide the agents hint without changing empty-prompt Left navigation.
+                agents: None,
                 toggle_shortcuts: self.footer.toggle_shortcuts_key,
                 queue: self.footer.queue_key,
                 insert_newline: self.footer.insert_newline_key,
@@ -367,6 +366,7 @@ pub(super) struct FooterState {
     pub(super) status_line_value: Option<FooterContent>,
     // Available width and occupied height, shared by layout and cursor placement.
     pub(super) measured_status_line: std::cell::Cell<Option<(u16, u16)>>,
+    pub(super) status_line_right_value: Option<Line<'static>>,
     pub(super) status_line_enabled: bool,
     pub(super) side_conversation_context_label: Option<String>,
     pub(super) active_agent_label: Option<String>,

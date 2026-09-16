@@ -7,6 +7,8 @@ use super::sidebar;
 use super::sidebar::PaneFocus;
 use super::sidebar::SidebarContent;
 use super::sidebar::SidebarLayout;
+use crate::bottom_pane::max_left_width_for_right;
+use crate::bottom_pane::render_context_right;
 use crate::bottom_pane::render_unfocused_status;
 use crate::custom_terminal::Frame;
 use crate::legacy_core::config::edit::ConfigEdit;
@@ -476,7 +478,10 @@ impl SidePaneLayout {
         };
         frame
             .buffer
-            .set_style(composer, crate::style::quiet_workspace_style());
+            .set_style(
+                composer,
+                crate::style::quiet_workspace_style().bg(ratatui::style::Color::Reset),
+            );
         let inset = u16::from(composer_height > 1);
         let text_area = Rect::new(
             composer.x.saturating_add(/*rhs*/ 2),
@@ -494,15 +499,21 @@ impl SidePaneLayout {
             );
         }
         if let Some(status) = &companion.display.status {
+            let status_area = Rect {
+                y: composer.bottom(),
+                height: status_height,
+                ..area
+            };
+            let right = companion.display.context.line();
+            let width = max_left_width_for_right(status_area, right.width() as u16)
+                .map(|width| width.saturating_add(crate::ui_consts::FOOTER_INDENT_COLS as u16))
+                .unwrap_or(status_area.width);
             render_unfocused_status(
                 status.clone(),
-                Rect {
-                    y: composer.bottom(),
-                    height: status_height,
-                    ..area
-                },
+                Rect { width, ..status_area },
                 frame.buffer,
             );
+            render_context_right(status_area, frame.buffer, &right);
         }
     }
 }

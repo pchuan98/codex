@@ -80,9 +80,7 @@ impl ChatWidget {
             return;
         }
         self.pending_usage_menu_rate_limit_request_id = None;
-        for snapshot in snapshots {
-            self.on_rate_limit_snapshot(Some(snapshot));
-        }
+        self.on_account_rate_limit_snapshots(snapshots);
         if let Ok(response) = result {
             self.available_rate_limit_reset_credits = Some(response.available_count);
         }
@@ -126,9 +124,7 @@ impl ChatWidget {
             return false;
         }
         self.pending_rate_limit_reset_request_id = None;
-        for snapshot in snapshots {
-            self.on_rate_limit_snapshot(Some(snapshot));
-        }
+        self.on_account_rate_limit_snapshots(snapshots);
 
         let mut shows_picker = false;
         let params = match result {
@@ -439,9 +435,7 @@ impl ChatWidget {
             return false;
         }
         self.pending_rate_limit_reset_request_id = None;
-        for snapshot in snapshots {
-            self.on_rate_limit_snapshot(Some(snapshot));
-        }
+        self.on_account_rate_limit_snapshots(snapshots);
 
         let message = match result {
             Ok(response) => {
@@ -499,9 +493,7 @@ impl ChatWidget {
             return false;
         }
         self.pending_rate_limit_reset_hint_request_id = None;
-        for snapshot in snapshots {
-            self.on_rate_limit_snapshot(Some(snapshot));
-        }
+        self.on_account_rate_limit_snapshots(snapshots);
         if !self.has_codex_backend_auth {
             return false;
         }

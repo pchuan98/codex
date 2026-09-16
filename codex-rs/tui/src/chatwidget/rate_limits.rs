@@ -235,7 +235,19 @@ impl ChatWidget {
     }
 
     pub(crate) fn on_rate_limit_snapshot(&mut self, snapshot: Option<RateLimitSnapshot>) {
+        self.sync_custom_status_line_rate_limit(snapshot.as_ref(), Local::now());
         self.on_rate_limit_snapshot_from(snapshot, RateLimitSnapshotSource::AccountUsage);
+    }
+
+    pub(crate) fn on_account_rate_limit_snapshots(&mut self, snapshots: Vec<RateLimitSnapshot>) {
+        // app_server_rate_limit_snapshots keeps the response's main snapshot first.
+        let mut snapshots = snapshots.into_iter();
+        if let Some(primary) = snapshots.next() {
+            self.on_rate_limit_snapshot(Some(primary));
+        }
+        for snapshot in snapshots {
+            self.on_rate_limit_snapshot_from(Some(snapshot), RateLimitSnapshotSource::AccountUsage);
+        }
     }
 
     pub(crate) fn on_rolling_rate_limit_snapshot(&mut self, snapshot: RateLimitSnapshot) {
@@ -248,6 +260,8 @@ impl ChatWidget {
             // An absent aggregate limit type is not a contradiction of model-scoped recovery.
             self.clear_backend_banner();
         }
+        // Keep each raw rolling update in arrival order, including model-specific buckets.
+        self.sync_custom_status_line_rate_limit(Some(&snapshot), Local::now());
         // Rolling app-server notifications are sparse. Preserve metadata learned from the full read.
         self.on_rate_limit_snapshot_from(Some(snapshot), RateLimitSnapshotSource::RollingUpdate);
     }
@@ -259,6 +273,7 @@ impl ChatWidget {
     ) {
         let usage_notice_blocked = self.codex_rate_limit_reached_type.is_some()
             || self.codex_spend_control_reached == Some(true);
+        let captured_at = Local::now();
         if let Some(mut snapshot) = snapshot {
             let limit_id = snapshot
                 .limit_id
@@ -384,7 +399,7 @@ impl ChatWidget {
                 let display = rate_limit_snapshot_display_for_limit(
                     &snapshot,
                     limit_label,
-                    Local::now(),
+                    captured_at,
                     self.clock_format,
                 );
                 self.rate_limit_snapshots_by_limit_id

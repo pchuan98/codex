@@ -572,6 +572,11 @@ pub async fn run_main_with_transport_options(
         arg0_paths.clone(),
         Arc::new(NoopThreadConfigLoader),
     );
+    let config_manager = if managed_daemon {
+        config_manager.with_local_resume_provider()
+    } else {
+        config_manager
+    };
     let startup = config_manager
         .load_managed_startup_config(startup_cwd.clone())
         .await?;

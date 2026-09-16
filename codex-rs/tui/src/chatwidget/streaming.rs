@@ -212,6 +212,7 @@ impl ChatWidget {
         width: u16,
     ) -> (Option<CapturedSideStream>, CapturedSideDisplay) {
         self.flush_completed_tool_activity();
+        self.refresh_custom_status_line_if_due();
         let visualizations = self.thread_id.and_then(|id| {
             crate::inline_visualization::InlineVisualizationContext::from_config(&self.config, id)
         });
@@ -265,6 +266,7 @@ impl ChatWidget {
                 draft
             },
             status: self.status_line_text(),
+            context: self.custom_context_usage(),
             work: self
                 .last_turn_id()
                 .filter(|_| self.is_agent_turn_running())

@@ -4,7 +4,6 @@
 //! behavior easier to review without paging through the rest of `chatwidget.rs`.
 
 use super::*;
-use crate::bottom_pane::status_line_from_segments;
 use crate::branch_summary;
 use crate::chatwidget::limit_label_for_window;
 use crate::chatwidget::rate_limits::get_limits_duration;
@@ -107,12 +106,11 @@ pub(super) struct CachedProjectRootName {
 
 impl ChatWidget {
     fn status_surface_selections(&self) -> StatusSurfaceSelections {
-        let (status_line_items, invalid_status_line_items) = self.status_line_items_with_invalids();
         let (terminal_title_items, invalid_terminal_title_items) =
             self.terminal_title_items_with_invalids();
         StatusSurfaceSelections {
-            status_line_items,
-            invalid_status_line_items,
+            status_line_items: Vec::new(),
+            invalid_status_line_items: Vec::new(),
             terminal_title_items,
             invalid_terminal_title_items,
         }
@@ -201,28 +199,8 @@ impl ChatWidget {
         }
     }
 
-    fn refresh_status_line_from_selections(&mut self, selections: &StatusSurfaceSelections) {
-        let enabled = !selections.status_line_items.is_empty();
-        self.bottom_pane.set_status_line_enabled(enabled);
-        if !enabled {
-            self.set_status_line(/*status_line*/ None);
-            return;
-        }
-
-        let mut segments = Vec::new();
-        for item in &selections.status_line_items {
-            if let Some(value) = self.status_line_value_for_item(*item) {
-                segments.push((*item, value));
-            }
-        }
-
-        let line = status_line_from_segments(
-            segments,
-            self.local_settings.tui.status_line_use_colors,
-            self.thread_id,
-            self.status_line_pull_request_url(),
-        );
-        self.set_status_line(line.map(Into::into));
+    fn refresh_status_line_from_selections(&mut self, _selections: &StatusSurfaceSelections) {
+        self.refresh_custom_status_line();
     }
 
     /// Clears the terminal title Codex most recently wrote, if any.
@@ -503,7 +481,7 @@ impl ChatWidget {
             })
     }
 
-    fn status_line_cwd(&self) -> &Path {
+    pub(super) fn status_line_cwd(&self) -> &Path {
         self.current_cwd
             .as_deref()
             .unwrap_or(self.config.cwd.as_path())

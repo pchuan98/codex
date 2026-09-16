@@ -26,6 +26,8 @@ pub(crate) use chat_composer::TranscriptFooter;
 pub(crate) use composer_gap::ComposerGap;
 pub(crate) use footer::footer_hint_items_line;
 pub(crate) use footer::inset_footer_hint_area;
+pub(crate) use footer::max_left_width_for_right;
+pub(crate) use footer::render_context_right;
 pub(crate) use footer::render_unfocused_status;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -2631,6 +2633,12 @@ impl BottomPane {
 
     pub(crate) fn set_luna_reserve_active(&mut self, active: bool) {
         if self.composer.set_luna_reserve_active(active) {
+            self.request_redraw();
+        }
+    }
+
+    pub(crate) fn set_status_line_right(&mut self, status_line: Option<Line<'static>>) {
+        if self.composer.set_status_line_right(status_line) {
             self.request_redraw();
         }
     }

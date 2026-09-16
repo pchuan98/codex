@@ -897,14 +897,16 @@ async fn lookup_latest_session_target_with_app_server(
         LatestSessionLookupMode::StateDbOnly,
         LatestSessionLookupMode::ScanAndRepair,
     ] {
-        let response = app_server
-            .thread_list(latest_session_lookup_params(
-                model_providers.clone(),
-                cwd_filter,
-                include_non_interactive,
-                lookup_mode,
-            ))
-            .await;
+        let mut params = latest_session_lookup_params(
+            model_providers.clone(),
+            cwd_filter,
+            include_non_interactive,
+            lookup_mode,
+        );
+        if matches!(action, resume_picker::SessionPickerAction::Resume) && !uses_remote_workspace {
+            params.current_account_only = false;
+        }
+        let response = app_server.thread_list(params).await;
         let response = match response {
             Err(_) if lookup_mode == LatestSessionLookupMode::StateDbOnly => continue,
             response => response?,

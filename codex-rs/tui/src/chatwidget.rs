@@ -265,6 +265,9 @@ mod dynamic_activity;
 mod empty_state_policy;
 pub(crate) use self::connectors::ConnectorScopeGeneration;
 use self::connectors::ConnectorsState;
+mod custom_status_line;
+use self::custom_status_line::CustomStatusLineState;
+pub(crate) use self::custom_status_line::CustomContextUsage;
 mod exec_state;
 use self::exec_state::RunningCommand;
 use self::exec_state::UnifiedExecProcessSummary;
@@ -563,6 +566,7 @@ pub(crate) struct ChatWidget {
     session_header: SessionHeader,
     pub(crate) initial_user_message: Option<UserMessage>,
     status_account_display: Option<StatusAccountDisplay>,
+    custom_status_line: CustomStatusLineState,
     pub(crate) remote_connection: Option<RemoteConnectionStatus>,
     /// Remote app servers cannot read image paths on the TUI host.
     pub(crate) snapshot_local_images: bool,
@@ -1147,6 +1151,7 @@ impl ChatWidget {
                 self.bottom_pane
                     .set_context_window(/*percent*/ None, /*used_tokens*/ None);
                 self.token_info = None;
+                self.refresh_custom_status_line();
             }
         }
     }
@@ -1159,6 +1164,7 @@ impl ChatWidget {
         let used_tokens = self.context_used_tokens(&info, percent.is_some());
         self.bottom_pane.set_context_window(percent, used_tokens);
         self.token_info = Some(info);
+        self.refresh_custom_status_line();
     }
 
     fn context_remaining_percent(&self, info: &TokenUsageInfo) -> Option<i64> {
@@ -1184,6 +1190,7 @@ impl ChatWidget {
                     self.bottom_pane
                         .set_context_window(/*percent*/ None, /*used_tokens*/ None);
                     self.token_info = None;
+                    self.refresh_custom_status_line();
                 }
             }
         }
@@ -1213,6 +1220,7 @@ impl ChatWidget {
         }
         self.refresh_status_line_if_workspace_headline_due();
         self.refresh_thread_usage_if_settlement_due();
+        self.refresh_custom_status_line_if_due();
         self.refresh_terminal_program_status();
     }
 
@@ -2109,6 +2117,7 @@ impl ChatWidget {
 
     pub(crate) fn clear_token_usage(&mut self) {
         self.token_info = None;
+        self.refresh_custom_status_line();
     }
 }
 

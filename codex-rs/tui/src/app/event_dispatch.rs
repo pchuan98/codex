@@ -2155,9 +2155,7 @@ impl App {
                     };
                     match origin {
                         RateLimitRefreshOrigin::Recovery | RateLimitRefreshOrigin::Periodic => {
-                            for snapshot in snapshots {
-                                self.chat_widget.on_rate_limit_snapshot(Some(snapshot));
-                            }
+                            self.chat_widget.on_account_rate_limit_snapshots(snapshots);
                         }
                         RateLimitRefreshOrigin::StartupPrefetch {
                             reset_hint_request_id,

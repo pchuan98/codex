@@ -309,9 +309,7 @@ impl ChatWidget {
             return;
         }
 
-        for snapshot in snapshots {
-            self.on_rate_limit_snapshot(Some(snapshot));
-        }
+        self.on_account_rate_limit_snapshots(snapshots);
 
         let rate_limit_snapshots: Vec<RateLimitSnapshotDisplay> = self
             .rate_limit_snapshots_by_limit_id

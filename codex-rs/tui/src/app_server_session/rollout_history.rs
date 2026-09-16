@@ -160,6 +160,39 @@ impl AppServerSession {
         if self.thread_params_mode().settings_owner() == ThreadSettingsOwner::Client {
             self.thread_tool_transport().validate_config(&config)?;
         }
+        let local_provider = self.local_resume_provider(&config, model_settings).await?;
+        let paginated = self.history_support == ThreadHistorySupport::Paginated;
+        let cached_legacy = paginated
+            && self
+                .history_pagination
+                .get(&thread_id)
+                .is_some_and(|state| state.history_mode == ThreadHistoryMode::Legacy);
+        // Hold the maintenance lock through a full legacy resume to prevent migration.
+        let mut rollout_maintenance_guard = if cached_legacy && self.uses_embedded_app_server() {
+            codex_rollout::try_acquire_rollout_maintenance_lock(config.codex_home.as_path())
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        // Capture the receipt before the resume-time history boundary. Later results are delivered live.
+        self.unread_revisions.remove(&thread_id);
+        let metadata = Box::pin(self.thread_read(thread_id, /*include_turns*/ false)).await;
+        let metadata = if local_provider.is_some() {
+            Some(metadata?)
+        } else {
+            metadata.ok()
+        };
+        let cross_provider = local_provider.filter(|provider| {
+            metadata
+                .as_ref()
+                .is_some_and(|thread| thread.model_provider != *provider)
+        });
+        let model_settings = if cross_provider.is_some() {
+            ResumeModelSettings::OverrideFromCurrentConfig
+        } else {
+            model_settings
+        };
         let session_config = if matches!(
             model_settings,
             ResumeModelSettings::RestoreFromThread
@@ -181,35 +214,17 @@ impl AppServerSession {
         if self.thread_params_mode().settings_owner() == ThreadSettingsOwner::Client
             && model_settings == ResumeModelSettings::OverrideFromCurrentConfig
         {
-            params.model_provider = self.explicit_model_provider(&config);
+            params.model_provider = cross_provider.or_else(|| self.explicit_model_provider(&config));
         }
         if self.thread_params_mode().settings_owner() == ThreadSettingsOwner::Client {
             self.thread_tool_transport()
                 .configure_mcp(&mut params.config);
         }
-        let paginated = self.history_support == ThreadHistorySupport::Paginated;
-        let cached_legacy = paginated
-            && self
-                .history_pagination
-                .get(&thread_id)
-                .is_some_and(|state| state.history_mode == ThreadHistoryMode::Legacy);
-        // Hold the maintenance lock through a full legacy resume to prevent migration.
-        let mut rollout_maintenance_guard = if cached_legacy && self.uses_embedded_app_server() {
-            codex_rollout::try_acquire_rollout_maintenance_lock(config.codex_home.as_path())
-                .ok()
-                .flatten()
-        } else {
-            None
-        };
-        // Capture the receipt before the resume-time history boundary. Later results are delivered live.
-        self.unread_revisions.remove(&thread_id);
-        let metadata = Box::pin(self.thread_read(thread_id, /*include_turns*/ false))
-            .await
-            .ok();
         let known_legacy = cached_legacy
             && (!self.uses_embedded_app_server()
                 || (rollout_maintenance_guard.is_some()
                     && metadata
+                        .as_ref()
                         .is_some_and(|thread| thread.history_mode == ThreadHistoryMode::Legacy)));
         params.exclude_turns = paginated && !known_legacy;
         if params.exclude_turns {

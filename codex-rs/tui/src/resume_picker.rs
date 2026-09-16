@@ -962,7 +962,9 @@ fn spawn_app_server_source(backend: AppServerPickerBackend) -> sources::Source {
                             unreachable!("catalog cursors never reach a source")
                         }
                     });
-                    let params = thread_list_params(
+                    let local_resume = matches!(provider_filter, ProviderFilter::All)
+                        && !app_server.uses_remote_workspace();
+                    let mut params = thread_list_params(
                         cursor,
                         cwd_filter,
                         request.status,
@@ -971,6 +973,9 @@ fn spawn_app_server_source(backend: AppServerPickerBackend) -> sources::Source {
                         include_non_interactive,
                         matches!(request.mode, PageLoadMode::StateDbOnly),
                     );
+                    if local_resume {
+                        params.current_account_only = false;
+                    }
                     let page = tokio::select! {
                         page = load_app_server_page(&mut app_server, params) => page,
                         _ = bg_tx.closed() => continue,

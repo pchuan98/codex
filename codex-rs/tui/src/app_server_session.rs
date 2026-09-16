@@ -18,6 +18,7 @@ pub(crate) mod provider_selection;
 mod provider_selection_tests;
 mod read_state;
 mod realtime;
+mod resume_provider;
 mod rollout_history;
 pub(crate) use read_state::unread_revision;
 mod side_chat_history;
