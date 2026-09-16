@@ -672,6 +672,7 @@ impl App {
                 Some(started.thread.id.as_str())
             }
             ServerNotification::McpServerStatusUpdated(status) => status.thread_id.as_deref(),
+            ServerNotification::ThreadTokenUsageUpdated(usage) => Some(usage.thread_id.as_str()),
             _ => None,
         };
         id.and_then(|id| ThreadId::from_string(id).ok())

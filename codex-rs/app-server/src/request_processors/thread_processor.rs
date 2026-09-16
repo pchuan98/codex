@@ -4683,7 +4683,7 @@ impl ThreadRequestProcessor {
                 } else {
                     None
                 };
-                let token_usage_turn_id = (include_turns || paginated_resume)
+                let mut token_usage_turn_id = (include_turns || paginated_resume)
                     .then(|| {
                         let turns = if thread.turns.is_empty() {
                             initial_turns_page
@@ -4694,8 +4694,11 @@ impl ThreadRequestProcessor {
                         };
                         restored_token_usage_turn_id(response_history.get_rollout_items(), turns)
                     })
-                    .filter(|turn_id| !turn_id.is_empty())
-                    .filter(|_| !paginated_resume || thread.forked_from_id.is_none());
+                    .filter(|turn_id| !turn_id.is_empty());
+                if token_usage_turn_id.is_none() && codex_thread.token_usage_info().await.is_some() {
+                    token_usage_turn_id =
+                        latest_stored_turn_id(self.thread_store.as_ref(), thread_id).await;
+                }
                 if redact_resume_payloads {
                     redact_thread_resume_payloads(&mut thread.turns);
                     if let Some(initial_turns_page) = initial_turns_page.as_mut() {
@@ -4731,8 +4734,7 @@ impl ThreadRequestProcessor {
                 self.outgoing
                     .send_response_with_thread_originator(request_id, response, thread_originator)
                     .await;
-                // `excludeTurns` is explicitly the cheap resume path, so avoid
-                // rebuilding history only to attribute a replayed usage update.
+                // Metadata-only resumes still replay usage without hydrating historical items.
                 if let Some(token_usage_turn_id) = token_usage_turn_id {
                     // The client needs restored usage before it starts another turn.
                     // Sending after the response preserves JSON-RPC request ordering while
@@ -5062,7 +5064,7 @@ impl ThreadRequestProcessor {
             } else {
                 None
             };
-            let cold_resume_token_usage_turn_id = cold_resume_history
+            let mut cold_resume_token_usage_turn_id = cold_resume_history
                 .map(|history| {
                     let turns = paginated_turns
                         .as_deref()
@@ -5074,8 +5076,13 @@ impl ThreadRequestProcessor {
                         });
                     restored_token_usage_turn_id(history, turns)
                 })
-                .filter(|turn_id| !turn_id.is_empty())
-                .filter(|_| !paginated_resume || thread_summary.forked_from_id.is_none());
+                .filter(|turn_id| !turn_id.is_empty());
+            if cold_resume_token_usage_turn_id.is_none()
+                && existing_thread.token_usage_info().await.is_some()
+            {
+                cold_resume_token_usage_turn_id =
+                    latest_stored_turn_id(self.thread_store.as_ref(), existing_thread_id).await;
+            }
             let paginated_initial_turns_page_with_active_slot = if paginated_resume {
                 match params.initial_turns_page.as_ref() {
                     Some(params)
@@ -5871,6 +5878,7 @@ impl ThreadRequestProcessor {
         };
         let ephemeral_token_usage_turn_id = (ephemeral && include_turns)
             .then(|| restored_token_usage_turn_id(&history_items, ephemeral_turns.as_slice()));
+        let inherited_token_usage_turn_id = restored_token_usage_turn_id(&history_items, &[]);
         let token_usage_history_items = paginated_source.then(|| Arc::clone(&history_items));
         let inherited_project_id = source_thread.project_id.clone();
         let reserved_thread_id = if options.config.ephemeral {
@@ -6057,8 +6065,14 @@ impl ThreadRequestProcessor {
                 thread.turns.as_slice(),
             ));
         }
-        let token_usage_turn_id =
+        let mut token_usage_turn_id =
             token_usage_turn_id.filter(|id| thread.turns.iter().any(|turn| turn.id == *id));
+        if token_usage_turn_id.is_none() && !inherited_token_usage_turn_id.is_empty() {
+            token_usage_turn_id = Some(inherited_token_usage_turn_id);
+        }
+        if token_usage_turn_id.is_none() && forked_thread.token_usage_info().await.is_some() {
+            token_usage_turn_id = latest_stored_turn_id(self.thread_store.as_ref(), thread_id).await;
+        }
         if let Some(name) = source_thread_name {
             set_thread_name_from_title(&mut thread, name);
         }
@@ -6115,8 +6129,7 @@ impl ThreadRequestProcessor {
         self.outgoing
             .send_response_with_thread_originator(request_id, response, thread_originator)
             .await;
-        // `excludeTurns` is the cheap fork path, so skip restored usage replay
-        // instead of rebuilding history only to attribute a historical update.
+        // Metadata-only forks still replay usage without hydrating historical items.
         if let Some(token_usage_turn_id) = token_usage_turn_id {
             // Mirror the resume contract for forks: the new thread is usable as soon
             // as the response arrives, so restored usage must follow immediately.

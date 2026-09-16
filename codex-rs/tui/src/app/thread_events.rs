@@ -97,6 +97,7 @@ pub(super) enum ThreadEventAttachment {
 #[derive(Debug)]
 pub(super) struct ThreadEventStore {
     pub(super) session: Option<ThreadSessionState>,
+    context_usage: super::thread_context_usage::ThreadContextUsage,
     pub(super) turns: Vec<Turn>,
     pub(super) buffer: VecDeque<ThreadBufferedEvent>,
     pub(super) attachment_prefix: Option<usize>,
@@ -138,6 +139,7 @@ impl ThreadEventStore {
             ThreadBufferedEvent::Notification(notification) => matches!(
                 notification.as_ref(),
                 ServerNotification::HookStarted(_)
+                    | ServerNotification::ThreadTokenUsageUpdated(_)
                     | ServerNotification::HookCompleted(_)
                     | ServerNotification::McpServerStatusUpdated(_)
                     | ServerNotification::McpServerOauthLoginCompleted(_)
@@ -149,6 +151,7 @@ impl ThreadEventStore {
     pub(super) fn new(capacity: usize) -> Self {
         Self {
             session: None,
+            context_usage: Default::default(),
             turns: Vec::new(),
             buffer: VecDeque::new(),
             attachment_prefix: None,
@@ -243,6 +246,9 @@ impl ThreadEventStore {
     }
 
     fn push_notification_inner(&mut self, notification: Cow<'_, ServerNotification>) {
+        if self.context_usage.observe(notification.as_ref()) {
+            return;
+        }
         let user_item = match notification.as_ref() {
             ServerNotification::ItemStarted(n) => Some((&n.turn_id, &n.item.payload)),
             ServerNotification::ItemCompleted(n) => Some((&n.turn_id, &n.item.payload)),
@@ -544,6 +550,7 @@ impl ThreadEventStore {
                 _ => true,
             }
         });
+        self.context_usage.append_to(&mut snapshot.events);
         snapshot
     }
 

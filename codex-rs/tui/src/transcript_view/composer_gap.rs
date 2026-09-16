@@ -51,6 +51,10 @@ impl TranscriptView {
         result: &Result<CopyStatus, String>,
         characters: usize,
     ) {
+        if matches!(result, Ok(CopyStatus::Confirmed | CopyStatus::Unconfirmed)) {
+            self.copy_feedback = None;
+            return;
+        }
         if result == &Ok(CopyStatus::Busy)
             && self
                 .copy_feedback

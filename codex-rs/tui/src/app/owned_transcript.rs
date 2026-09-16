@@ -1393,26 +1393,32 @@ impl App {
         ) && self.enter_returns_to_latest()
             && self.transcript_view.can_return_to_latest();
         if let TuiEvent::Key(key) = event
+            && key.kind != KeyEventKind::Release
             && !self.transcript_view.has_active_interaction()
-            && keymap_action_ids().any(|action| {
-                action.context != KeymapContext::Pager
-                    && !matches!(action.action, "find_transcript" | "focus_activity")
-                    && self.active_keymap_contexts().contains_action(action)
-                    && !(empty_enter_returns_to_latest
-                        && action.context == KeymapContext::Composer
-                        && action.action == "submit")
-                    && ((key.modifiers.is_empty()
-                        && matches!(key.code, KeyCode::PageUp | KeyCode::PageDown))
-                        || crate::transcript_view::JumpTarget::from_key(*key).is_some()
-                        || configured_binding_for_action(&self.local_settings.tui.keymap, action)
-                            .is_some_and(std::option::Option::is_some))
-                    && bindings_for_action(
-                        &self.keymap,
-                        action.context.config_name(),
-                        action.action,
-                    )
-                    .is_some_and(|bindings| bindings.is_pressed(*key))
-            })
+            && {
+                // Resolve binding conflicts only after a shortcut matches, at most once per key.
+                let contexts = std::cell::LazyCell::new(|| self.active_keymap_contexts());
+                let navigation_key = (key.modifiers.is_empty()
+                    && matches!(key.code, KeyCode::PageUp | KeyCode::PageDown))
+                    || crate::transcript_view::JumpTarget::from_key(*key).is_some();
+                keymap_action_ids().any(|action| {
+                    action.context != KeymapContext::Pager
+                        && !matches!(action.action, "find_transcript" | "focus_activity")
+                        && !(empty_enter_returns_to_latest
+                            && action.context == KeymapContext::Composer
+                            && action.action == "submit")
+                        && (navigation_key
+                            || configured_binding_for_action(&self.local_settings.tui.keymap, action)
+                                .is_some_and(std::option::Option::is_some))
+                        && bindings_for_action(
+                            &self.keymap,
+                            action.context.config_name(),
+                            action.action,
+                        )
+                        .is_some_and(|bindings| bindings.is_pressed(*key))
+                        && contexts.contains_action(action)
+                })
+            }
         {
             return Ok(false);
         }

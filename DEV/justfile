@@ -1,0 +1,16 @@
+# PowerShell 7.4+ keeps forwarded arguments out of interpolated shell source.
+set shell := ["pwsh", "-NoLogo", "-NoProfile", "-CommandWithArgs"]
+set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-CommandWithArgs"]
+set positional-arguments
+
+# Build Debug (static musl on Linux) and run CPA, forwarding Codex arguments.
+run *arguments:
+    @$runArguments = @($args | Select-Object -Skip 1); & ./scripts/run.ps1 @runArguments; exit $LASTEXITCODE
+
+# Pack this architecture (static musl on Linux); Debug unless --release is given.
+pack mode="--debug":
+    @switch ($args[1]) { '--debug' { & ./scripts/pack.ps1 } '--release' { & ./scripts/pack.ps1 -Release } default { throw 'Usage: just pack [--release]' } }; exit $LASTEXITCODE
+
+# Publish the current manifest, native package before launcher.
+publish target:
+    @& ./scripts/npm/publish.ps1 -RegistryTarget $args[1]; exit $LASTEXITCODE

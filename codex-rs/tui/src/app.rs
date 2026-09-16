@@ -301,6 +301,7 @@ pub(crate) mod startup_bootstrap;
 mod startup_prompts;
 mod startup_warnings;
 pub(crate) mod thread_attachment;
+mod thread_context_usage;
 mod thread_event_buffer;
 mod thread_events;
 mod thread_goal_actions;

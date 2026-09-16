@@ -415,7 +415,6 @@ use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
-use crate::style::user_message_style;
 use codex_protocol::ThreadId;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
@@ -425,6 +424,7 @@ mod agents_navigation;
 mod attachment_state;
 mod completion_target;
 pub(super) mod composer_layout;
+mod custom_status_line;
 mod draft_state;
 mod footer_state;
 mod history_search;
@@ -824,6 +824,7 @@ impl ChatComposer {
                 status_line_value: None,
                 labeled_status_line: Default::default(),
                 status_line_area: std::cell::Cell::default(),
+                status_line_right_value: None,
                 status_line_enabled: false,
                 side_conversation_context_label: None,
                 active_agent_label: None,
@@ -845,8 +846,7 @@ impl ChatComposer {
                 )
                 .map(ShortcutHint::from),
                 queue_key: default_keymap.primary_hint(KeymapContext::Composer, "queue"),
-                toggle_shortcuts_key: default_keymap
-                    .primary_hint(KeymapContext::Composer, "toggle_shortcuts"),
+                toggle_shortcuts_key: None,
                 shortcut_guide_keys: super::shortcut_overlay::ShortcutGuideKeys::from_keymap(
                     &default_keymap,
                 ),
@@ -1154,8 +1154,8 @@ impl ChatComposer {
                 .map(ShortcutHint::from),
             };
         self.footer.queue_key = keymap.primary_hint(KeymapContext::Composer, "queue");
-        self.footer.toggle_shortcuts_key =
-            keymap.primary_hint(KeymapContext::Composer, "toggle_shortcuts");
+        // Keep the shortcut binding active without advertising it in the idle footer.
+        self.footer.toggle_shortcuts_key = None;
         self.footer.shortcut_guide_keys =
             super::shortcut_overlay::ShortcutGuideKeys::from_keymap(keymap);
         self.footer.history_search_key =
@@ -4910,8 +4910,8 @@ impl ChatComposer {
             selection.register(status.intersection(buf.area), changed);
             selection.register(footer_rect.intersection(buf.area), changed);
         }
-        let style = user_message_style();
-        let mut block = Block::default().style(style);
+        let style = crate::style::user_message_style();
+        let mut block = Block::default();
         // Mark the padding without guessing a fill that could hide the terminal's cursor.
         if style.bg.is_none() && !textarea_rect.is_empty() {
             let gray = crate::terminal_palette::best_color((128, 128, 128));
@@ -4943,7 +4943,6 @@ impl ChatComposer {
                     .skip(first)
                     .collect::<Vec<_>>(),
             )
-            .style(style)
             .render(remote_images_rect, buf);
         }
         if !textarea_rect.is_empty() {

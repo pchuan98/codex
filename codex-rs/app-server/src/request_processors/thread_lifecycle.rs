@@ -1365,8 +1365,8 @@ async fn handle_pending_thread_resume_request(
     outgoing
         .send_response_with_thread_originator(request_id, response, originator)
         .await;
-    // Warm metadata-only resumes skip history reconstruction. Cold paginated children can
-    // replay usage using attribution captured before the listener was attached.
+    // Metadata-only resumes use attribution captured before the listener was attached,
+    // without reconstructing historical items.
     if let Some(token_usage_turn_id) = token_usage_turn_id {
         // Rejoining a loaded thread has the same UI contract as a cold resume, but
         // uses the live conversation state instead of reconstructing a new session.

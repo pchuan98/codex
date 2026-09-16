@@ -490,8 +490,9 @@ impl SidePaneLayout {
             .status_line
             .as_ref()
             .filter(|_| !watch_only);
+        let right = companion.display.context.line();
         let wanted_status = status.map_or(0, |status| {
-            status.height(footer.status_bounds(area.width, available))
+            status.height_with_right(footer.status_bounds(area.width, available), &right)
         });
         let footer = footer.allocate(available, wanted_status);
         let above = available - footer.height();
@@ -530,7 +531,10 @@ impl SidePaneLayout {
         };
         frame
             .buffer
-            .set_style(composer, crate::style::quiet_workspace_style());
+            .set_style(
+                composer,
+                crate::style::quiet_workspace_style().bg(ratatui::style::Color::Reset),
+            );
         let inset = u16::from(composer_height > 1);
         let text_area = Rect::new(
             composer.x.saturating_add(/*rhs*/ 2),
@@ -548,10 +552,11 @@ impl SidePaneLayout {
             );
         }
         if let Some(status) = status {
-            status.render(
+            status.render_with_right(
                 footer.status_area(area),
                 frame.buffer,
                 StatusLineFocus::Unfocused,
+                &right,
             );
         }
     }

@@ -159,6 +159,9 @@ impl ChatWidget {
                             &notification.item_id,
                         ))
                 {
+                    if !from_replay {
+                        self.record_custom_status_line_delta(&notification.delta);
+                    }
                     self.on_keyed_agent_message_delta(
                         (notification.turn_id, notification.item_id),
                         notification.delta,
@@ -167,6 +170,9 @@ impl ChatWidget {
             }
             ServerNotification::PlanDelta(notification) => {
                 self.restore_realtime_transcripts_before_turn(&notification.turn_id);
+                if !from_replay && self.active_mode_kind() == ModeKind::Plan {
+                    self.record_custom_status_line_delta(&notification.delta);
+                }
                 self.on_plan_delta(notification.delta);
             }
             ServerNotification::ReasoningSummaryTextDelta(notification) => {
@@ -176,6 +182,9 @@ impl ChatWidget {
                 ) && self.status_state.reasoning_item_id.as_deref()
                     == Some(&notification.item_id)
                 {
+                    if !from_replay {
+                        self.record_custom_status_line_delta(&notification.delta);
+                    }
                     self.on_agent_reasoning_delta(notification.delta);
                 }
             }
@@ -187,6 +196,9 @@ impl ChatWidget {
                     )
                     && self.status_state.reasoning_item_id.as_deref() == Some(&notification.item_id)
                 {
+                    if !from_replay {
+                        self.record_custom_status_line_delta(&notification.delta);
+                    }
                     self.on_agent_reasoning_delta(notification.delta);
                 }
             }

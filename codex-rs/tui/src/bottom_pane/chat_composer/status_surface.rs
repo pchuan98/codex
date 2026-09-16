@@ -79,7 +79,12 @@ impl ChatComposer {
             bounds.height = bounds.height.min(1);
         }
         self.with_status_surface_content(focus, |status| {
-            status.map_or(0, |status| status.height(bounds))
+            status.map_or(0, |status| {
+                self.footer.status_line_right_value.as_ref().map_or_else(
+                    || status.height(bounds),
+                    |right| status.height_with_right(bounds, right),
+                )
+            })
         })
     }
 
@@ -144,13 +149,22 @@ impl ChatComposer {
             {
                 let target = status.and_then(StatusLine::as_native).cloned();
                 if let Some(frame) = transition.render_line(target, area.width) {
-                    StatusLine::from(frame).render(area, buf, focus);
+                    let frame = StatusLine::from(frame);
+                    if let Some(right) = &self.footer.status_line_right_value {
+                        frame.render_with_right(area, buf, focus, right);
+                    } else {
+                        frame.render(area, buf, focus);
+                    }
                 }
                 if let Some(requester) = &self.frame_requester {
                     requester.schedule_frame_in(EFFORT_STATUS_LINE_FRAME_TICK);
                 }
             } else if let Some(status) = status {
-                status.render(area, buf, focus);
+                if let Some(right) = &self.footer.status_line_right_value {
+                    status.render_with_right(area, buf, focus, right);
+                } else {
+                    status.render(area, buf, focus);
+                }
             }
         });
     }

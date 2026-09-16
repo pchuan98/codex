@@ -577,6 +577,11 @@ pub async fn run_main_with_transport_options(
         Arc::new(NoopThreadConfigLoader),
     )
     .with_mcp_launch_cwds(runtime_options.plugin_mcp_launch.into_cwds()?);
+    let config_manager = if managed_daemon {
+        config_manager.with_local_resume_provider()
+    } else {
+        config_manager
+    };
     let startup = config_manager
         .load_managed_startup_config(startup_cwd.clone(), /*previous*/ None)
         .await?;

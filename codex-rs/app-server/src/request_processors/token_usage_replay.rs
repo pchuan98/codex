@@ -25,6 +25,30 @@ use codex_rollout::RolloutItem;
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::OutgoingMessageSender;
 
+/// Finds an attribution fallback without hydrating historical messages or tool output.
+pub(super) async fn latest_stored_turn_id(
+    store: &dyn codex_thread_store::ThreadStore,
+    thread_id: ThreadId,
+) -> Option<String> {
+    match store
+        .list_turns(codex_thread_store::ListTurnsParams {
+            thread_id,
+            include_archived: true,
+            cursor: None,
+            page_size: 1,
+            sort_direction: codex_thread_store::SortDirection::Desc,
+            items_view: codex_thread_store::StoredTurnItemsView::NotLoaded,
+        })
+        .await
+    {
+        Ok(page) => page.turns.into_iter().next().map(|turn| turn.turn_id),
+        Err(error) => {
+            tracing::warn!(%thread_id, %error, "failed to attribute restored token usage");
+            None
+        }
+    }
+}
+
 /// Sends a restored token usage update to the connection that attached to a thread.
 ///
 /// This is lifecycle replay rather than a model event: the rollout already contains

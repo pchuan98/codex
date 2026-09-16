@@ -608,6 +608,7 @@ use crate::thread_state::PendingThreadUnloads;
 use crate::thread_state::ThreadListenerCommand;
 use crate::thread_state::ThreadState;
 use crate::thread_state::ThreadStateManager;
+use token_usage_replay::latest_stored_turn_id;
 use token_usage_replay::restored_token_usage_turn_id;
 use token_usage_replay::send_thread_token_usage_update_to_connection;
 

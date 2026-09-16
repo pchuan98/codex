@@ -68,6 +68,7 @@ impl SideCompanion {
                 auxiliary: Vec::new(),
                 draft: Box::default(),
                 status_line: None,
+                context: Default::default(),
                 work: None,
                 last_completed_agent_message: None,
                 cwd,
@@ -87,6 +88,11 @@ impl SideCompanion {
         new_status: impl FnOnce() -> crate::status_indicator_widget::StatusIndicatorWidget,
     ) -> bool {
         match notification {
+            ServerNotification::ThreadTokenUsageUpdated(event) => {
+                self.display.context.tokens = event.token_usage.last.total_tokens;
+                self.display.context.window = event.token_usage.model_context_window
+                    .or(self.display.context.window);
+            }
             ServerNotification::TurnStarted(event)
                 if self
                     .display
