@@ -325,6 +325,9 @@ mod connectors;
 mod constructor;
 pub(crate) use self::connectors::ConnectorScopeGeneration;
 use self::connectors::ConnectorsState;
+mod custom_status_line;
+use self::custom_status_line::CustomStatusLineState;
+pub(crate) use self::custom_status_line::CustomStatusLineGitStatus;
 mod exec_state;
 use self::exec_state::RunningCommand;
 use self::exec_state::UnifiedExecProcessSummary;
@@ -596,6 +599,7 @@ pub(crate) struct ChatWidget {
     session_header: SessionHeader,
     pub(crate) initial_user_message: Option<UserMessage>,
     status_account_display: Option<StatusAccountDisplay>,
+    custom_status_line: CustomStatusLineState,
     pub(crate) remote_connection: Option<RemoteConnectionStatus>,
     /// Remote app servers cannot read image paths on the TUI host.
     pub(crate) snapshot_local_images: bool,

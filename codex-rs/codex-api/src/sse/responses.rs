@@ -40,6 +40,12 @@ pub fn spawn_response_stream(
     turn_state: Option<Arc<OnceLock<String>>>,
 ) -> ResponseStream {
     let rate_limit_snapshots = parse_all_rate_limits(&stream_response.headers);
+    let rate_limit_snapshots = rate_limit_snapshots
+        .iter()
+        .find(|snapshot| snapshot.limit_id.as_deref() == Some("codex"))
+        .cloned()
+        .map(|snapshot| vec![snapshot])
+        .unwrap_or(rate_limit_snapshots);
     let models_etag = stream_response
         .headers
         .get("X-Models-Etag")

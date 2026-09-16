@@ -684,6 +684,12 @@ pub(crate) enum AppEvent {
         result: Result<GetAccountRateLimitsResponse, String>,
     },
 
+    /// Async update of the custom footer status line's Git state.
+    CustomStatusLineGitStatusUpdated {
+        cwd: PathBuf,
+        status: Option<crate::chatwidget::CustomStatusLineGitStatus>,
+    },
+
     /// Open the authenticated account analytics dashboard.
     OpenAnalytics {
         view: Option<crate::analytics::TokenActivityView>,
