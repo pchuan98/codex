@@ -96,6 +96,7 @@ pub(crate) use multi_select_picker::MultiSelectPicker;
 mod question_tests;
 mod questions;
 mod request_user_input;
+mod custom_status_line;
 mod status_line;
 mod status_line_setup;
 mod status_line_style;
@@ -2670,6 +2671,12 @@ impl BottomPane {
 
     pub(crate) fn set_luna_reserve_active(&mut self, active: bool) {
         if self.composer.set_luna_reserve_active(active) {
+            self.request_redraw();
+        }
+    }
+
+    pub(crate) fn set_status_line_right(&mut self, status_line: Option<Line<'static>>) {
+        if self.composer.set_status_line_right(status_line) {
             self.request_redraw();
         }
     }

@@ -152,6 +152,7 @@ impl ChatWidget {
             session_header: SessionHeader::new(header_model),
             initial_user_message,
             status_account_display,
+            custom_status_line: CustomStatusLineState::default(),
             remote_connection: None,
             app_server_path_convention: None,
             statusline_feature_enabled: false,

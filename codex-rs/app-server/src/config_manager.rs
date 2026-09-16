@@ -42,6 +42,10 @@ use tracing::warn;
 #[path = "application_network.rs"]
 pub(crate) mod application_network;
 
+#[path = "resume_provider.rs"]
+mod resume_provider;
+use resume_provider::ResumeProviderPolicy;
+
 /// Shared app-server entry point for loading effective Codex configuration.
 #[derive(Clone)]
 pub(crate) struct ConfigManager {
@@ -50,6 +54,7 @@ pub(crate) struct ConfigManager {
     runtime_feature_enablement: Arc<RwLock<BTreeMap<String, bool>>>,
     loader_overrides: LoaderOverrides,
     strict_config: bool,
+    resume_provider_policy: ResumeProviderPolicy,
     cloud_config_bundle: Arc<RwLock<CloudConfigBundleLoader>>,
     arg0_paths: Arg0DispatchPaths,
     mcp_launch_cwds: Arc<McpLaunchCwds>,
@@ -110,6 +115,7 @@ impl ConfigManager {
             runtime_feature_enablement: Arc::new(RwLock::new(BTreeMap::new())),
             loader_overrides,
             strict_config,
+            resume_provider_policy: ResumeProviderPolicy::Saved,
             cloud_config_bundle: Arc::new(RwLock::new(cloud_config_bundle)),
             arg0_paths,
             mcp_launch_cwds: Arc::default(),
@@ -544,6 +550,14 @@ impl ConfigManager {
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned)
         });
+        let saved_provider = self
+            .resolve_resume_provider(
+                saved_provider,
+                requested_provider.as_deref(),
+                typesafe_overrides.cwd.clone().or_else(|| cwd.clone()),
+            )
+            .await?;
+        let saved_provider = saved_provider.as_deref();
         if let Some(saved) = saved_provider {
             typesafe_overrides.model_provider = Some(saved.to_owned());
         }

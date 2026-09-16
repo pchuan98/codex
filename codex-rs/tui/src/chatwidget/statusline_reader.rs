@@ -73,17 +73,8 @@ impl StatuslineReadEvent {
 
 impl ChatWidget {
     pub(crate) fn selected_statusline_provider(&self) -> Option<&StatusLineProviderId> {
-        if self.statusline_disconnected
-            || self.read_only_history
-            || self
-                .app_event_tx
-                .voice_only
-                .load(std::sync::atomic::Ordering::Relaxed)
-            || !self.custom_statusline_enabled()
-        {
-            return None;
-        }
-        self.configured_statusline_provider()
+        // This fork always renders its fixed status line, including after picker changes.
+        None
     }
 
     pub(crate) fn configured_statusline_provider(&self) -> Option<&StatusLineProviderId> {
