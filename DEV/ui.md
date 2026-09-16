@@ -1,0 +1,165 @@
+# TUI 界面定制
+
+## 功能范围
+
+本 fork 包含两项 TUI 界面修改：
+
+- 输入框和远程图片行不渲染用户消息背景色。
+- 底部使用固定的自定义状态栏。
+
+## 输入区外观
+
+TUI 不使用 `user_message_style()` 绘制输入框和远程图片行的背景。
+
+本修改只影响 composer 输入区域：
+
+- 保留原有 padding、尺寸和布局。
+- 不改变输入、粘贴、附件和远程图片功能。
+- 不改变历史消息的样式。
+- 不改变菜单、弹窗和其他使用 `user_message_style()` 的界面。
+
+实现位置：`codex-rs/tui/src/bottom_pane/chat_composer.rs`。
+
+## 状态栏布局
+
+状态栏左侧依次显示：
+
+- Reasoning 等级、Fast 模式和模型名。
+- 当前目录。
+- Git 分支、修改文件数、新增行数和删除行数。
+- Streaming 输出速度。
+- Codex 5 小时和 weekly 额度。
+- 额度 reset 剩余时间。
+
+右侧显示当前 thread 的 context 已用百分比。
+
+状态栏固定启用。上游 `/statusline` 配置和终端标题逻辑继续保留，`tui.status_line` 不改变本 fork 的底部布局。
+
+空闲时不显示 `? for shortcuts`，也不在 transcript 提示后追加 `? shortcuts`。
+只隐藏快捷键提示，`?` 的帮助展开功能及用户重映射继续生效。其他运行、警告和退出提示沿用上游，保留原有行高以避免布局跳动。
+
+## 状态栏数据
+
+### Git
+
+- 通过 App Server 的 workspace command 通道在后台查询。
+- 按仓库根目录缓存，最多保存 16 个仓库；目录到仓库的映射最多保存最近解析的 64 个目录。
+- 当前目录是否为仓库根目录在显示时比较，不写入共享的仓库缓存。
+- Git 子进程超时为 2 秒。
+- 查询失败时保留旧值；没有旧值时隐藏 Git 段。
+- 渲染过程只读取缓存，不执行 Git 命令。
+
+### 输出速度
+
+- Streaming 期间统计输出 token 速度。
+- 速度通过输出字符估算 token 数，不是服务端精确 token 计数。
+- 每 500ms 最多刷新一次显示。
+- 使用最近 5 个样本计算平均速度。
+- Turn 结束后保留最后一次速度。
+
+### 额度
+
+- 读取收到的 rate-limit snapshot，不发起额外请求。
+- SSE 额度选择和顺序沿用上游，不按额度族额外筛选。
+- 同时存在 5 小时和 weekly 数据时显示两者。
+- 只有 weekly 数据时只显示 weekly。
+- 超过 15 分钟的 snapshot 不显示。
+- 24 小时内的 reset 使用 `H:MM`，超过 24 小时按向上取整的天数显示。
+
+### Context
+
+- 右侧显示 context 已用百分比，保留一位小数。
+- 复用上游按 thread 路由和恢复时重放的 token usage 通知，不维护第二份本地线程缓存。
+- 切换 thread 时由上游事件管道恢复对应数值，不沿用其他会话的数据。
+
+The right-side context value is attached to both the scrollback footer and the
+fullscreen transcript's separate status surface. Both use the same cached value.
+The fullscreen surface retains the upstream Plan mode cycling hint when space
+allows; its width calculation includes the custom context value and falls back
+to the compact mode hint on narrow terminals.
+
+## 颜色
+
+额度百分比、context 占用和 reset 倒计时使用连续 RGB 颜色。颜色在以下数值处达到指定颜色：
+
+| 数值 | 颜色 |
+|---:|---|
+| 0% | 绿色 |
+| 27.2% | 黄色 |
+| 53.6% | 橙色 |
+| 80% | 红色 |
+
+区间内按 RGB 分量线性插值，80% 以上保持红色。显示文本可以取整，颜色按未取整的原始数值计算。
+
+Reasoning 使用固定颜色：
+
+| Reasoning | 颜色 |
+|---|---|
+| `minimal`、`low` | 绿色 |
+| `medium` | 黄色 |
+| `high` | 橙色 |
+| `xhigh`、`max`、`ultra` | 红色 |
+| 缺失或未知值 | 深灰色 |
+
+其他固定颜色：
+
+- Git 修改文件数为黄色。
+- Git 新增行数为绿色。
+- Git 删除行数为红色。
+- 输出速度为青色。
+- 模型名为浅蓝色。
+
+## 实现位置
+
+- `codex-rs/tui/src/bottom_pane/chat_composer.rs`
+  - 移除输入框和远程图片行的背景。
+  - 接入状态栏右侧 context 显示。
+
+- `codex-rs/tui/src/bottom_pane/chat_composer/custom_status_line.rs`
+  - 独立维护右侧 context 值及其与模式提示的组合，供 inline 和 fullscreen 共用。
+  - 由自定义 ChatWidget 状态栏直接调用 BottomPane 更新，不再修改上游 `chatwidget/status_controls.rs`。
+
+- `codex-rs/tui/src/chatwidget/custom_status_line.rs`
+  - 负责状态栏布局、颜色、额度、context 和输出速度。
+
+- `codex-rs/tui/src/chatwidget/custom_status_line/git_status.rs`
+  - 负责 Git 查询和缓存。
+
+- 其他 TUI 文件
+  - 只保留状态更新、事件传递和 bottom pane 接线。
+
+## 不包含的修改
+
+- 不修改模型 context window。
+- 不修改 `tool_suggest` 和 `remote_plugin` 的默认值。
+- 不修改 Resume picker 和 Fork picker。
+- 遥测和 process log 行为全部沿用上游。
+- 不为额度增加网络请求。
+- 不把 Git 查询放入渲染线程。
+
+## Rebase 检查
+
+2026-10-08：远程图片行保留上游按选中图片滚动的逻辑，仅移除背景样式。底栏逻辑沿用上游迁移后的 `footer_state.rs`，继续接入自定义右侧 context 和隐藏空闲快捷键提示。
+
+底栏和状态文字的选区注册沿用上游，移除输入框背景时不得同时移除 `rendered_selection` 接线。Windows 的剪贴板文本快捷键和粘贴期间延迟 transcript 重绘也沿用上游，不增加 fork 的粘贴分批规则。
+
+命令前缀 `/` 和 `!` 使用上游的 prompt state、提交与历史恢复逻辑。输入区无背景填充，因此 `/` 提示符通过 `accent_color()` 按终端默认背景选择强调色，不引用已移除的输入框背景样式。
+
+当前自定义状态栏固定使用本文件列出的颜色，`/config` 中的 Status line colors 开关不控制它；上游的 16 色终端状态栏颜色回退也不会自动应用于自定义 RGB 渐变。后续统一设置和颜色适配时，应保留固定布局与右侧小数 context 值。
+
+上游新增的 `/statusline` 会话级布局、颜色参数及其 `/presets` 预设同样不改变本 fork 的固定底栏；`/title` 的会话级设置和预设继续使用上游行为。
+
+上游 `BranchChanges` 统计当前分支已提交内容相对比较基线的增删行数，自定义 Git 段统计工作区修改，两者不能直接替换。额度仍需要原始 reset timestamp，速度仍需要流式 delta；这些数据不能仅由上游状态栏显示字符串恢复。
+
+### Windows Debug 下确认 Astra 模型
+
+上游 PR #47717 已在事件分发前解包 Astra picker 事件，避免递归轮询大型分发 future 导致栈溢出。本 fork 使用上游实现，不再保留独立的 `app/event_dispatch_entry.rs` 修复。
+
+上游修改 composer、footer、状态栏、rate limit、token usage 或 workspace command 后，重新检查对应接线。保留上游结构，只恢复本文件列出的界面行为。
+
+## Implementation simplification (2026-09-16)
+
+- The custom footer caches protocol `RateLimitWindow` values directly, together with the observation time. Reset timestamps are converted when rendering; invalid, absent, and expired timestamps still omit the countdown.
+- The separate SSE-fed footer cache remains necessary: upstream account display data does not retain raw reset timestamps and is not updated by rolling SSE notifications.
+- Fractional context usage is calculated inside the custom footer. The upstream integer remaining-percentage method is restored unchanged; its baseline constant is shared through crate visibility to avoid duplicating the value.
+- Agent validation used static review and `git diff --check`; no tests, snapshots, formatters, or compilation were run by the agent. After the missing V8 archive was downloaded and verified, the user reported successful compilation and use with no observed issues.

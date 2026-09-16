@@ -310,7 +310,6 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
-use ratatui::widgets::Block;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::WidgetRef;
@@ -377,7 +376,6 @@ use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::Renderable;
 use crate::slash_command::SlashCommand;
-use crate::style::user_message_style;
 use codex_protocol::ThreadId;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
@@ -387,6 +385,7 @@ mod agents_navigation;
 mod attachment_state;
 mod completion_target;
 mod composer_layout;
+mod custom_status_line;
 mod draft_state;
 mod footer_state;
 mod history_search;
@@ -767,6 +766,7 @@ impl ChatComposer {
                 goal_status_indicator: None,
                 ide_context_active: false,
                 status_line_value: None,
+                status_line_right_value: None,
                 status_line_hyperlink_url: None,
                 status_line_enabled: false,
                 side_conversation_context_label: None,
@@ -789,8 +789,7 @@ impl ChatComposer {
                 )
                 .map(ShortcutHint::from),
                 queue_key: default_keymap.primary_hint(KeymapContext::Composer, "queue"),
-                toggle_shortcuts_key: default_keymap
-                    .primary_hint(KeymapContext::Composer, "toggle_shortcuts"),
+                toggle_shortcuts_key: None,
                 history_search_key: default_keymap
                     .primary_hint(KeymapContext::Composer, "history_search_previous"),
                 reasoning_down_key: default_keymap
@@ -1090,8 +1089,8 @@ impl ChatComposer {
                 .map(ShortcutHint::from),
             };
         self.footer.queue_key = keymap.primary_hint(KeymapContext::Composer, "queue");
-        self.footer.toggle_shortcuts_key =
-            keymap.primary_hint(KeymapContext::Composer, "toggle_shortcuts");
+        // Keep the shortcut binding active without advertising it in the idle footer.
+        self.footer.toggle_shortcuts_key = None;
         self.footer.history_search_key =
             keymap.primary_hint(KeymapContext::Composer, "history_search_previous");
         self.footer.reasoning_down_key =
@@ -4724,8 +4723,13 @@ impl ChatComposer {
                         } else if self.status_surface_height(options) > 0 || transition_active {
                             None
                         } else if status_line_active {
-                            let full = self.mode_indicator_line(show_cycle_hint);
-                            let compact = self.mode_indicator_line(/*show_cycle_hint*/ false);
+                            let full =
+                                self.append_status_line_right_value(
+                                    self.mode_indicator_line(show_cycle_hint),
+                                );
+                            let compact = self.append_status_line_right_value(
+                                self.mode_indicator_line(/*show_cycle_hint*/ false),
+                            );
                             let full_width = full.as_ref().map(|l| l.width() as u16).unwrap_or(0);
                             if can_show_left_with_context(hint_rect, left_width, full_width) {
                                 full
@@ -4877,8 +4881,6 @@ impl ChatComposer {
             selection.register(status.intersection(buf.area), changed);
             selection.register(footer_rect.intersection(buf.area), changed);
         }
-        let style = user_message_style();
-        Block::default().style(style).render(composer_rect, buf);
         if !remote_images_rect.is_empty() {
             let first = self
                 .attachments
@@ -4892,7 +4894,6 @@ impl ChatComposer {
                     .skip(first)
                     .collect::<Vec<_>>(),
             )
-            .style(style)
             .render(remote_images_rect, buf);
         }
         if !textarea_rect.is_empty() {
@@ -4900,7 +4901,7 @@ impl ChatComposer {
                 if self.draft.prompt_prefix == PromptPrefix::Shell {
                     "!".light_red().bold()
                 } else if self.draft.prompt_prefix == PromptPrefix::Slash {
-                    "/".fg(crate::style::accent_color_on(style.bg)).bold()
+                    "/".fg(crate::style::accent_color()).bold()
                 } else if self.luna_reserve_active {
                     // Reserve keeps one arrow at every reasoning effort; only its foreground changes.
                     "›"

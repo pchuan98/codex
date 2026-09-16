@@ -256,6 +256,8 @@ impl ChatWidget {
     ) {
         let usage_notice_blocked = self.codex_rate_limit_reached_type.is_some()
             || self.codex_spend_control_reached == Some(true);
+        let captured_at = Local::now();
+        self.sync_custom_status_line_rate_limit(snapshot.as_ref(), captured_at);
         if let Some(mut snapshot) = snapshot {
             let limit_id = snapshot
                 .limit_id
@@ -381,7 +383,7 @@ impl ChatWidget {
                 let display = rate_limit_snapshot_display_for_limit(
                     &snapshot,
                     limit_label,
-                    Local::now(),
+                    captured_at,
                     self.clock_format,
                 );
                 self.rate_limit_snapshots_by_limit_id

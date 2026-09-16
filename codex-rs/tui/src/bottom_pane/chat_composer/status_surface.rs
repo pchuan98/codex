@@ -42,7 +42,7 @@ impl ChatComposer {
         props.mode = FooterMode::ComposerHasDraft;
         props.is_task_running = false;
         let line = passive_footer_status_line(&props);
-        let full = self.mode_indicator_line(show_cycle_hint);
+        let full = self.append_status_line_right_value(self.mode_indicator_line(show_cycle_hint));
         let left_width = line
             .as_ref()
             .map_or(/*default*/ 0, |line| line.width() as u16);
@@ -54,7 +54,7 @@ impl ChatComposer {
         {
             full
         } else {
-            self.mode_indicator_line(/*show_cycle_hint*/ false)
+            self.append_status_line_right_value(self.mode_indicator_line(/*show_cycle_hint*/ false))
         };
         let right_width = right
             .as_ref()
