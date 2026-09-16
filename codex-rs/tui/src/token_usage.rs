@@ -6,7 +6,7 @@ use codex_protocol::num_format::format_with_separators;
 use serde::Deserialize;
 use serde::Serialize;
 
-const BASELINE_TOKENS: i64 = 12000;
+pub(crate) const BASELINE_TOKENS: i64 = 12000;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
