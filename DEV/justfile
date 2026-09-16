@@ -1,0 +1,16 @@
+# PowerShell 7.4+ is required for argument forwarding without string interpolation.
+set shell := ["pwsh", "-NoLogo", "-NoProfile", "-CommandWithArgs"]
+set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-CommandWithArgs"]
+set positional-arguments
+
+# Build the native platform package and launcher; default to Debug.
+pack mode="--debug":
+    @switch ($args[1]) { '--debug' { & ./scripts/pack.ps1 -DebugBuild } '--release' { & ./scripts/pack.ps1 } default { throw 'Usage: just pack [--debug|--release]' } }
+
+# Publish the latest manifest to gitea or npm, platform package first.
+push target:
+    @& ./scripts/npm/push.ps1 -RegistryTarget $args[1]
+
+# Run the latest packaged CPA locally, forwarding CLI arguments.
+run *arguments:
+    @$runArguments = @($args | Select-Object -Skip 1); & ./scripts/run.ps1 @runArguments
