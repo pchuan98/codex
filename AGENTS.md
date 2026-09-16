@@ -1,3 +1,12 @@
+# 本 fork 的验证约束
+
+先阅读 `DEV/README.md`。本节是本 fork 的验证规则，优先于下文沿用的上游测试、格式化和快照要求。
+
+- 不得运行任何 `just`、测试、formatter 或 snapshot 命令，包括 `cargo test`、`cargo nextest`、`cargo fmt`、`rustfmt` 和 `cargo insta`。
+- 不得新增或修改测试代码、snapshot 基线或生成快照；用户明确要求清理误生成的文件时，只清理本次产生的文件。
+- 验证只使用静态检查，以及 `DEV/` 文档明确允许的最小范围 `cargo check` 或 `cargo build`。
+- 不得为了满足下文的上游默认要求自动启用测试或格式化；只有用户后续明确解除对应限制时才可执行。
+
 # Rust/codex-rs
 
 In the codex-rs folder where the rust code lives:

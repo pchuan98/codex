@@ -156,6 +156,25 @@ impl AppServerSession {
         model_settings: ResumeModelSettings,
         permission_overrides: crate::resume_permissions::ResumePermissions,
     ) -> Result<AppServerStartedThread> {
+        // Resolve the effective local provider using upstream precedence, including server
+        // defaults. Cross-provider resumes need an explicit override even without CLI flags.
+        let cross_provider = if model_settings == ResumeModelSettings::RestoreFromThread
+            && !self.uses_remote_workspace()
+        {
+            let provider = self
+                .history_model_provider(&config)
+                .await?
+                .unwrap_or_else(|| config.model_provider_id.clone());
+            let thread = self.thread_read(thread_id, /*include_turns*/ false).await?;
+            (thread.model_provider != provider).then_some(provider)
+        } else {
+            None
+        };
+        let model_settings = if cross_provider.is_some() {
+            ResumeModelSettings::OverrideFromCurrentConfig
+        } else {
+            model_settings
+        };
         let session_config = if matches!(
             model_settings,
             ResumeModelSettings::RestoreFromThread | ResumeModelSettings::PreserveExistingThread
@@ -173,7 +192,7 @@ impl AppServerSession {
             permission_overrides,
         );
         if model_settings == ResumeModelSettings::OverrideFromCurrentConfig {
-            params.model_provider = self.explicit_model_provider(&config);
+            params.model_provider = cross_provider.or_else(|| self.explicit_model_provider(&config));
         }
         self.thread_tool_transport()
             .configure_mcp(&mut params.config);
