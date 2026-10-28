@@ -24,6 +24,7 @@ use codex_extension_api::ToolStartInput;
 use codex_features::CurrentTimeSource;
 use codex_features::Feature;
 use codex_history::RolloutItem;
+use codex_login::AuthHeaders;
 use codex_login::CodexAuth;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_otel::MetricsClient;
@@ -144,8 +145,10 @@ impl TimeProvider for RecordingTimeProvider {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[test_case(CodexAuth::from_api_key("test-api-key"), "OpenAI", "/v1", true, "/v1/responses", true; "api_key_uses_responses")]
 #[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), "OpenAI", "/backend-api/codex", false, "/backend-api/codex/responses", true; "chatgpt_marks_guardian_by_default")]
+#[test_case(CodexAuth::Headers(AuthHeaders::new(http::HeaderMap::new())), "OpenAI", "/api/codex", false, "/api/codex/responses", true; "header_auth_marks_guardian_on_direct_backend")]
+#[test_case(CodexAuth::from_api_key("test-api-key"), "OpenAI", "/api/codex", true, "/api/codex/responses", true; "api_key_does_not_mark_guardian_on_direct_backend")]
 #[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), "OpenAI", "/backend-api/codex", true, "/backend-api/codex/responses", true; "legacy_opt_in_still_accepted")]
-#[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), "OpenAI", "/v1", true, "/v1/responses", true; "custom_openai_url_uses_responses")]
+#[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), "OpenAI", "/v1", true, "/v1/responses", true; "custom_openai_url_marks_guardian")]
 #[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), "Custom", "/backend-api/codex", true, "/backend-api/codex/responses", true; "custom_provider_uses_responses")]
 #[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), "OpenAI", "/backend-api/codex", true, "/backend-api/codex/responses", false; "retry_without_response_id_keeps_last_parent")]
 async fn guardian_session_inherits_parent_http_fallback(
@@ -156,8 +159,8 @@ async fn guardian_session_inherits_parent_http_fallback(
     expected_guardian_path: &str,
     response_id_present: bool,
 ) -> Result<()> {
-    let credits_enabled =
-        auth.uses_codex_backend() && provider_name == "OpenAI" && base_path == "/backend-api/codex";
+    let credits_enabled = auth.uses_codex_backend() && provider_name == "OpenAI";
+    let requests_parent_credits = credits_enabled && auth.is_chatgpt_auth();
     skip_if_no_network!(Ok(()));
 
     let configured_policy = "Use the task-configured Guardian policy.";
@@ -299,7 +302,7 @@ async fn guardian_session_inherits_parent_http_fallback(
                         .cloned(),
                     body["client_metadata"].get("parent_response_id"),
                 ),
-                (credits_enabled.then(|| json!("true")), None)
+                (requests_parent_credits.then(|| json!("true")), None)
             );
         }
     }
@@ -878,18 +881,21 @@ async fn guardian_requests_record_only_their_own_tool_calls() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[test_case(CodexAuth::from_api_key("test-api-key"), true, "gpt-5.6-luna"; "api_key_uses_luna_with_responses_lite")]
-#[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), true, "codex-auto-review"; "chatgpt_uses_codex_auto_review")]
-#[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), false, "codex-auto-review"; "chatgpt_without_free_guardian")]
+#[test_case(CodexAuth::from_api_key("test-api-key"), "/v1", true, "gpt-5.6-luna"; "api_key_uses_luna_with_responses_lite")]
+#[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), "/backend-api/codex", true, "codex-auto-review"; "chatgpt_uses_codex_auto_review")]
+#[test_case(CodexAuth::create_dummy_chatgpt_auth_for_testing(), "/backend-api/codex", false, "codex-auto-review"; "chatgpt_without_free_guardian")]
+#[test_case(CodexAuth::Headers(AuthHeaders::new(http::HeaderMap::new())), "/api/codex", false, "codex-auto-review"; "header_auth_uses_codex_auto_review_on_direct_backend")]
+#[test_case(CodexAuth::Headers(AuthHeaders::new(http::HeaderMap::new())), "/v1", false, "codex-auto-review"; "header_auth_marks_guardian_on_custom_url")]
 async fn guardian_session_prewarms_and_is_reused_for_first_review(
     auth: CodexAuth,
+    base_path: &str,
     free_guardian: bool,
     expected_model: &str,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let uses_codex_backend = auth.uses_codex_backend();
-    let credits_enabled = uses_codex_backend;
+    let credits_enabled = auth.uses_codex_backend();
+    let requests_parent_credits = credits_enabled && auth.is_chatgpt_auth();
     let bundled_models = codex_models_manager::bundled_models_response()?.models;
     let catalog_auto_review = bundled_models
         .iter()
@@ -950,7 +956,7 @@ async fn guardian_session_prewarms_and_is_reused_for_first_review(
     let time_provider = Arc::new(RecordingTimeProvider {
         thread_ids: Mutex::new(Vec::new()),
     });
-    let backend_base_url = format!("{}/backend-api/codex", server.uri());
+    let backend_base_url = format!("{}{base_path}", server.uri());
     let mut builder = test_codex()
         .with_auth(auth)
         .with_pre_build_hook(move |home| {
@@ -961,9 +967,7 @@ async fn guardian_session_prewarms_and_is_reused_for_first_review(
             .expect("Guardian endpoint configuration should be written");
         })
         .with_config(move |config| {
-            if uses_codex_backend {
-                config.model_provider.base_url = Some(backend_base_url);
-            }
+            config.model_provider.base_url = Some(backend_base_url);
             let rules_dir = config.codex_home.join("rules");
             fs::create_dir_all(&rules_dir).expect("create execution policy directory");
             let policy_justification = format!(
@@ -1074,7 +1078,7 @@ async fn guardian_session_prewarms_and_is_reused_for_first_review(
         (
             credits_enabled.then(|| json!(parent_response_id)),
             None,
-            credits_enabled.then(|| json!("true")),
+            requests_parent_credits.then(|| json!("true")),
             None,
         )
     );
@@ -1207,14 +1211,7 @@ async fn guardian_session_prewarms_and_is_reused_for_first_review(
     for handshake in server.handshakes() {
         let is_guardian = handshake.header("x-openai-subagent").as_deref() == Some("guardian");
         let is_guardian_request = credits_enabled && is_guardian;
-        assert_eq!(
-            handshake.uri(),
-            if uses_codex_backend {
-                "/backend-api/codex/responses"
-            } else {
-                "/v1/responses"
-            }
-        );
+        assert_eq!(handshake.uri(), format!("{base_path}/responses"));
         assert_eq!(
             handshake.header("x-codex-guardian").as_deref(),
             is_guardian_request.then_some("reviewer")
@@ -1740,6 +1737,7 @@ async fn guardian_session_is_reused_for_consecutive_tool_reviews_without_prewarm
     .await;
     let mut parent_environments = local_selections(test.config.cwd.clone());
     let parent_environment_config = EnvironmentConfig {
+        environment_hooks: Default::default(),
         allow_login_shell: test.config.permissions.allow_login_shell,
         workspace_roots: parent_environments.environments[0].workspace_roots.clone(),
         permission_profile: PermissionProfileSnapshot::legacy(
@@ -2088,13 +2086,15 @@ async fn interrupted_guardian_review_across_model_change_does_not_execute_the_co
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[tracing_test::traced_test]
-#[test_case(None, false; "legacy_fallback")]
-#[test_case(None, true; "otel_enabled")]
-#[test_case(Some("Acting model rejection instructions."), false; "catalog_override")]
-#[test_case(Some(""), false; "empty_override")]
+#[test_case(None, false, true; "legacy_fallback")]
+#[test_case(None, true, true; "otel_enabled")]
+#[test_case(Some("Acting model rejection instructions."), false, true; "catalog_override")]
+#[test_case(Some(""), false, true; "empty_override")]
+#[test_case(None, false, false; "feedback_disabled")]
 async fn guardian_denial_rejects_tool_call_with_rationale(
     rejection_instructions: Option<&'static str>,
     log_assessments: bool,
+    feedback_enabled: bool,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
@@ -2142,6 +2142,8 @@ async fn guardian_denial_rejects_tool_call_with_rationale(
             });
         })
         .with_config(move |config| {
+            config.feedback_enabled = feedback_enabled;
+            config.otel.log_user_prompt = true;
             config.otel.log_guardian_assessments = log_assessments;
             config.otel.exporter = OtelExporterKind::OtlpGrpc {
                 endpoint: "http://127.0.0.1:1".to_string(),
@@ -2241,80 +2243,98 @@ async fn guardian_denial_rejects_tool_call_with_rationale(
     )
     .await?;
     let durable = state_db.list_guardian_review_records().await?;
-    assert_eq!(
-        durable.len(),
-        1,
-        "the Guardian capture must persist, not just fall back to memory"
-    );
-    let feedback = codex_feedback::guardian_review_failures(
-        Some(&state_db),
-        &[test.session_configured.thread_id],
-    )
-    .await
-    .attachment
-    .expect("failed Guardian review");
-    let record: serde_json::Value = serde_json::from_slice(&feedback.buffer)?;
-    assert_eq!(
-        record,
-        serde_json::from_slice::<serde_json::Value>(&durable[0].record)?
-    );
-    assert_eq!(record["instructions"], guardian_request.instructions_text());
-    assert!(
-        guardian_request.body_contains_text(record["action"].as_str().expect("reviewed action"))
-    );
-    let recorded_history: Vec<ResponseItem> = serde_json::from_value(record["history"].clone())?;
-    let inspection_request = requests
-        .iter()
-        .find(|request| {
-            request
+    if feedback_enabled {
+        assert_eq!(
+            durable.len(),
+            1,
+            "the Guardian capture must persist, not just fall back to memory"
+        );
+        let feedback = codex_feedback::guardian_review_failures(
+            Some(&state_db),
+            &[test.session_configured.thread_id],
+        )
+        .await
+        .attachment
+        .expect("failed Guardian review");
+        let record: serde_json::Value = serde_json::from_slice(&feedback.buffer)?;
+        assert_eq!(
+            record,
+            serde_json::from_slice::<serde_json::Value>(&durable[0].record)?
+        );
+        assert_eq!(record["instructions"], guardian_request.instructions_text());
+        assert!(
+            guardian_request
+                .body_contains_text(record["action"].as_str().expect("reviewed action"))
+        );
+        let recorded_history: Vec<ResponseItem> =
+            serde_json::from_value(record["history"].clone())?;
+        let inspection_request = requests
+            .iter()
+            .find(|request| {
+                request
+                    .function_call_output_text("exec-guardian-inspect")
+                    .is_some()
+            })
+            .expect("Guardian request following its inspection tool");
+        assert!(
+            inspection_request
                 .function_call_output_text("exec-guardian-inspect")
-                .is_some()
-        })
-        .expect("Guardian request following its inspection tool");
-    assert!(
-        inspection_request
-            .function_call_output_text("exec-guardian-inspect")
-            .expect("inspection output")
-            .contains("guardian-inspection-evidence")
-    );
-    let inspection_output = inspection_request
-        .input()
-        .into_iter()
-        .find(|item| {
-            item["type"] == "function_call_output" && item["call_id"] == "exec-guardian-inspect"
-        })
-        .expect("inspection response item");
-    assert!(recorded_history.contains(&serde_json::from_value(inspection_output)?));
-    assert!(recorded_history.iter().any(|item| {
-        matches!(item, ResponseItem::Message { role, content, .. }
-        if role == "assistant" && content.iter().any(|part| {
-            matches!(part, ContentItem::OutputText { text , .. }
-                if Some(text.as_str()) == record["decision"].as_str())
-        }))
-    }));
-    assert_eq!(
-        json!({
-            "reviewed_thread_id": record["reviewed_thread_id"],
-            "reviewer_thread_id": record["reviewer_thread_id"],
-            "status": record["status"],
-            "decision": serde_json::from_str::<serde_json::Value>(
-                record["decision"].as_str().expect("raw Guardian decision"),
-            )?,
-            "context_omitted": record["context_omitted"],
-        }),
-        json!({
-            "reviewed_thread_id": test.session_configured.thread_id,
-            "reviewer_thread_id": guardian_request.body_json()["client_metadata"]["thread_id"],
-            "status": "denied",
-            "decision": {
-                "risk_level": "high",
-                "user_authorization": "low",
-                "outcome": "deny",
-                "rationale": "The requested write has unacceptable test risk.",
-            },
-            "context_omitted": false,
-        })
-    );
+                .expect("inspection output")
+                .contains("guardian-inspection-evidence")
+        );
+        let inspection_output = inspection_request
+            .input()
+            .into_iter()
+            .find(|item| {
+                item["type"] == "function_call_output" && item["call_id"] == "exec-guardian-inspect"
+            })
+            .expect("inspection response item");
+        assert!(recorded_history.contains(&serde_json::from_value(inspection_output)?));
+        assert!(recorded_history.iter().any(|item| {
+            matches!(item, ResponseItem::Message { role, content, .. }
+            if role == "assistant" && content.iter().any(|part| {
+                matches!(part, ContentItem::OutputText { text , .. }
+                    if Some(text.as_str()) == record["decision"].as_str())
+            }))
+        }));
+        assert_eq!(
+            json!({
+                "reviewed_thread_id": record["reviewed_thread_id"],
+                "reviewer_thread_id": record["reviewer_thread_id"],
+                "status": record["status"],
+                "decision": serde_json::from_str::<serde_json::Value>(
+                    record["decision"].as_str().expect("raw Guardian decision"),
+                )?,
+                "context_omitted": record["context_omitted"],
+            }),
+            json!({
+                "reviewed_thread_id": test.session_configured.thread_id,
+                "reviewer_thread_id": guardian_request.body_json()["client_metadata"]["thread_id"],
+                "status": "denied",
+                "decision": {
+                    "risk_level": "high",
+                    "user_authorization": "low",
+                    "outcome": "deny",
+                    "rationale": "The requested write has unacceptable test risk.",
+                },
+                "context_omitted": false,
+            })
+        );
+    } else {
+        assert!(
+            durable.is_empty(),
+            "disabled feedback must not retain Guardian evidence"
+        );
+        assert!(
+            codex_feedback::guardian_review_failures(
+                Some(&state_db),
+                &[test.session_configured.thread_id]
+            )
+            .await
+            .attachment
+            .is_none()
+        );
+    }
 
     let tool_output = requests
         .iter()
@@ -2346,6 +2366,25 @@ async fn guardian_denial_rejects_tool_call_with_rationale(
             .expect("captured logs")
             .clone(),
     )?;
+    // Finalization converts the accepted review prompt into response items;
+    // it must still emit exactly one prompt event, even across inspection steps.
+    let guardian_thread_id = guardian_request.body_json()["client_metadata"]["thread_id"]
+        .as_str()
+        .expect("Guardian thread ID")
+        .to_owned();
+    let prompt_events: Vec<_> = logs
+        .lines()
+        .filter(|line| {
+            line.contains("codex.user_prompt")
+                && line.contains(" prompt=")
+                && line.contains(&format!("conversation.id={guardian_thread_id}"))
+        })
+        .collect();
+    assert_eq!(
+        prompt_events.len(),
+        1,
+        "Guardian prompt telemetry: {prompt_events:?}"
+    );
     let assessments: Vec<_> = logs
         .lines()
         .filter(|line| {

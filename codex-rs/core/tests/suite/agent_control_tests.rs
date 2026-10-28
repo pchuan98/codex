@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use codex_agent_message_board_extension::PostMetadata;
 use codex_core::AgentConfigUpdate;
 use codex_core::AgentControl;
 use codex_core::AgentExecutionGuard;
@@ -26,6 +25,7 @@ use codex_features::Feature;
 use codex_history::InitialHistory;
 use codex_history::ResumedHistory;
 use codex_history::RolloutItem;
+use codex_message_board::PostMetadata;
 use codex_protocol::AgentPath;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
@@ -51,7 +51,7 @@ use serde_json::json;
 use test_case::test_case;
 use wiremock::MockServer;
 
-struct TestAgentControl {
+pub(super) struct TestAgentControl {
     thread_id: ThreadId,
     service_tier: Mutex<Option<String>>,
     mail: Mutex<Vec<PendingAgentMessage>>,
@@ -60,7 +60,7 @@ struct TestAgentControl {
 }
 
 impl TestAgentControl {
-    fn new(thread_id: ThreadId) -> Self {
+    pub(super) fn new(thread_id: ThreadId) -> Self {
         Self {
             thread_id,
             service_tier: Mutex::default(),

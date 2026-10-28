@@ -5,6 +5,7 @@ use super::AppServerStartedThread;
 use super::HistoryHydrationScope;
 use super::ResumeModelSettings;
 use super::ThreadHistorySupport;
+use super::ThreadSettingsOwner;
 use super::bootstrap_request_error;
 use super::is_history_pagination_unsupported;
 use super::started_thread_from_resume_response;
@@ -155,10 +156,13 @@ impl AppServerSession {
         model_settings: ResumeModelSettings,
         permission_overrides: crate::resume_permissions::ResumePermissions,
     ) -> Result<AppServerStartedThread> {
-        self.thread_tool_transport().validate_config(&config)?;
+        if self.thread_params_mode().settings_owner() == ThreadSettingsOwner::Client {
+            self.thread_tool_transport().validate_config(&config)?;
+        }
         // Resolve the effective local provider using upstream precedence, including server
         // defaults. Cross-provider resumes need an explicit override even without CLI flags.
-        let cross_provider = if model_settings == ResumeModelSettings::RestoreFromThread
+        let cross_provider = if self.thread_params_mode().settings_owner() == ThreadSettingsOwner::Client
+            && model_settings == ResumeModelSettings::RestoreFromThread
             && !self.uses_remote_workspace()
         {
             let provider = self
@@ -191,11 +195,15 @@ impl AppServerSession {
             model_settings,
             permission_overrides,
         );
-        if model_settings == ResumeModelSettings::OverrideFromCurrentConfig {
+        if self.thread_params_mode().settings_owner() == ThreadSettingsOwner::Client
+            && model_settings == ResumeModelSettings::OverrideFromCurrentConfig
+        {
             params.model_provider = cross_provider.or_else(|| self.explicit_model_provider(&config));
         }
-        self.thread_tool_transport()
-            .configure_mcp(&mut params.config);
+        if self.thread_params_mode().settings_owner() == ThreadSettingsOwner::Client {
+            self.thread_tool_transport()
+                .configure_mcp(&mut params.config);
+        }
         let mut rollout_maintenance_guard = None;
         params.exclude_turns = if self.history_support == ThreadHistorySupport::Paginated {
             let known_legacy_history = self

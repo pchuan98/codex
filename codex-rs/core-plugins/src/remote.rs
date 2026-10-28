@@ -109,6 +109,10 @@ const OPENAI_CURATED_REMOTE_COLLECTION_KEY: &str = "vertical";
 const OAI_PRODUCT_SKU_HEADER: &str = "OAI-Product-Sku";
 pub(crate) const CODEX_PRODUCT_SKU: &str = "codex";
 const REMOTE_PLUGIN_CATALOG_TIMEOUT: Duration = Duration::from_secs(30);
+// Leave room within the 120-second mutation-gate wait even when successful pages keep arriving.
+const REMOTE_INSTALLED_PLUGINS_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
+// Allow 20,000 installed plugins without unbounded cursor history.
+const MAX_REMOTE_INSTALLED_PLUGIN_PAGES: usize = 100;
 const RECOMMENDED_PLUGINS_TIMEOUT: Duration = Duration::from_secs(5);
 const REMOTE_PLUGIN_LIST_PAGE_LIMIT: u32 = 200;
 const MAX_RECOMMENDED_PLUGINS: usize = 50;
@@ -482,6 +486,9 @@ pub enum RemotePluginCatalogError {
     #[error("{0}")]
     UnexpectedResponse(String),
 
+    #[error("installed plugin inventory fetch exceeded its overall time limit")]
+    InstalledPluginsFetchTimeout,
+
     #[error("{0}")]
     CacheRemove(String),
 }
@@ -511,6 +518,7 @@ impl RemotePluginCatalogError {
             | Self::ArchiveTooLarge { .. }
             | Self::MissingUploadEtag
             | Self::UnexpectedResponse(_)
+            | Self::InstalledPluginsFetchTimeout
             | Self::CacheRemove(_) => None,
         }
     }
@@ -533,8 +541,6 @@ enum RemoteInstalledPluginScope {
 }
 
 impl RemotePluginScope {
-    const CATALOG_CACHE_SCOPES: [Self; 3] = [Self::Global, Self::User, Self::Workspace];
-
     fn api_value(self) -> &'static str {
         match self {
             Self::Global => "GLOBAL",
@@ -1147,32 +1153,35 @@ pub(crate) fn has_fresh_cached_remote_plugin_catalog(
     let Ok(auth) = ensure_chatgpt_auth(auth) else {
         return false;
     };
-    catalog_cache::load_cached_directory_plugins(
-        codex_home, config, auth, scope, /*collection*/ None,
+    catalog_cache::has_cached_directory_plugins(
+        codex_home,
+        config,
+        auth,
+        scope,
+        RemotePluginCatalogCacheMode::PreferFreshCache,
     )
-    .is_some_and(|cached| {
-        matches!(
-            cached.freshness,
-            catalog_cache::RemotePluginCatalogCacheFreshness::Fresh
-        )
-    })
 }
 
 pub(crate) fn cached_remote_plugin_catalog_scopes(
     codex_home: &Path,
     config: &RemotePluginServiceConfig,
     auth: Option<&CodexAuth>,
+    scopes: &[RemotePluginScope],
 ) -> BTreeSet<RemotePluginScope> {
     let Ok(auth) = ensure_chatgpt_auth(auth) else {
         return BTreeSet::new();
     };
-    RemotePluginScope::CATALOG_CACHE_SCOPES
-        .into_iter()
+    scopes
+        .iter()
+        .copied()
         .filter(|scope| {
-            catalog_cache::load_cached_directory_plugins(
-                codex_home, config, auth, *scope, /*collection*/ None,
+            catalog_cache::has_cached_directory_plugins(
+                codex_home,
+                config,
+                auth,
+                *scope,
+                RemotePluginCatalogCacheMode::PreferCache,
             )
-            .is_some()
         })
         .collect()
 }
@@ -1188,6 +1197,7 @@ pub fn cached_global_remote_discoverable_plugins(
         auth,
         RemotePluginScope::Global,
         /*collection*/ None,
+        RemotePluginCatalogCacheMode::PreferCache,
     )
     .map(|cached| cached.plugins)
     .unwrap_or_default()
@@ -1274,9 +1284,32 @@ fn build_remote_marketplace(
     }))
 }
 
+/// Selects whether installed-plugin metadata needs display enrichment.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InstalledPluginDisplayAssets {
+    /// Resolve image URLs and creator names.
+    #[default]
+    Include,
+    /// Skip display lookups; retain stored display fields and execution metadata.
+    Skip,
+}
+
 pub(crate) async fn fetch_remote_installed_plugins(
     config: &RemotePluginServiceConfig,
     auth: Option<&CodexAuth>,
+) -> Result<Vec<RemoteInstalledPlugin>, RemotePluginCatalogError> {
+    fetch_remote_installed_plugins_with_display_assets(
+        config,
+        auth,
+        InstalledPluginDisplayAssets::Include,
+    )
+    .await
+}
+
+pub(crate) async fn fetch_remote_installed_plugins_with_display_assets(
+    config: &RemotePluginServiceConfig,
+    auth: Option<&CodexAuth>,
+    display_assets: InstalledPluginDisplayAssets,
 ) -> Result<Vec<RemoteInstalledPlugin>, RemotePluginCatalogError> {
     let auth = ensure_chatgpt_auth(auth)?;
     let mut installed_plugins = fetch_installed_plugins(
@@ -1284,6 +1317,7 @@ pub(crate) async fn fetch_remote_installed_plugins(
         auth,
         RemoteInstalledPluginScope::All,
         /*include_download_urls*/ false,
+        display_assets,
     )
     .await?
     .into_iter()
@@ -2065,13 +2099,10 @@ async fn fetch_directory_plugins_for_scope_with_cache(
     collection: Option<&str>,
     cache_mode: RemotePluginCatalogCacheMode,
 ) -> Result<DirectoryPluginsFetchOutcome, RemotePluginCatalogError> {
-    if cache_mode != RemotePluginCatalogCacheMode::ForceRefetch
-        && let Some(codex_home) = codex_home
+    if let Some(codex_home) = codex_home
         && let Some(cached) = catalog_cache::load_cached_directory_plugins(
-            codex_home, config, auth, scope, collection,
+            codex_home, config, auth, scope, collection, cache_mode,
         )
-        && (cache_mode == RemotePluginCatalogCacheMode::PreferCache
-            || cached.freshness == catalog_cache::RemotePluginCatalogCacheFreshness::Fresh)
     {
         return Ok(DirectoryPluginsFetchOutcome {
             plugins: cached.plugins,
@@ -2167,6 +2198,7 @@ async fn fetch_installed_plugins_for_scope(
         auth,
         RemoteInstalledPluginScope::Single(scope),
         /*include_download_urls*/ false,
+        InstalledPluginDisplayAssets::Include,
     )
     .await
 }
@@ -2176,25 +2208,41 @@ async fn fetch_installed_plugins(
     auth: &CodexAuth,
     scope: RemoteInstalledPluginScope,
     include_download_urls: bool,
+    display_assets: InstalledPluginDisplayAssets,
 ) -> Result<Vec<RemotePluginInstalledItem>, RemotePluginCatalogError> {
-    let mut plugins = Vec::new();
-    let mut page_token = None;
-    loop {
-        let response = get_remote_plugin_installed_page(
-            config,
-            auth,
-            scope,
-            page_token.as_deref(),
-            include_download_urls,
-        )
-        .await?;
-        plugins.extend(response.plugins);
-        let Some(next_page_token) = response.pagination.next_page_token else {
-            break;
-        };
-        page_token = Some(next_page_token);
-    }
-    Ok(plugins)
+    // Only a complete inventory is authoritative: every failure discards all fetched pages
+    // before callers can publish the snapshot or remove plugins absent from it.
+    tokio::time::timeout(REMOTE_INSTALLED_PLUGINS_FETCH_TIMEOUT, async {
+        let mut plugins = Vec::new();
+        let mut page_token = None;
+        let mut seen_tokens = HashSet::new();
+        for _ in 0..MAX_REMOTE_INSTALLED_PLUGIN_PAGES {
+            let response = get_remote_plugin_installed_page(
+                config,
+                auth,
+                scope,
+                page_token.as_deref(),
+                include_download_urls,
+                display_assets,
+            )
+            .await?;
+            plugins.extend(response.plugins);
+            let Some(next_page_token) = response.pagination.next_page_token else {
+                return Ok(plugins);
+            };
+            if !seen_tokens.insert(next_page_token.clone()) {
+                return Err(RemotePluginCatalogError::UnexpectedResponse(
+                    "installed plugin inventory pagination repeated a cursor".to_string(),
+                ));
+            }
+            page_token = Some(next_page_token);
+        }
+        Err(RemotePluginCatalogError::UnexpectedResponse(
+            "installed plugin inventory pagination exceeded its page limit".to_string(),
+        ))
+    })
+    .await
+    .map_err(|_| RemotePluginCatalogError::InstalledPluginsFetchTimeout)?
 }
 
 async fn get_remote_plugin_list_page(
@@ -2253,23 +2301,24 @@ async fn get_remote_plugin_installed_page(
     scope: RemoteInstalledPluginScope,
     page_token: Option<&str>,
     include_download_urls: bool,
+    display_assets: InstalledPluginDisplayAssets,
 ) -> Result<RemotePluginInstalledResponse, RemotePluginCatalogError> {
     let base_url = config.chatgpt_base_url.trim_end_matches('/');
     let mut url = Url::parse(&format!("{base_url}/ps/plugins/installed"))
         .map_err(RemotePluginCatalogError::InvalidBaseUrl)?;
-    match scope {
-        RemoteInstalledPluginScope::All => {
-            url.query_pairs_mut()
-                .append_pair("limit", &REMOTE_PLUGIN_LIST_PAGE_LIMIT.to_string());
-        }
-        RemoteInstalledPluginScope::Single(scope) => {
-            url.query_pairs_mut()
-                .append_pair("scope", scope.api_value());
-        }
+    if let RemoteInstalledPluginScope::Single(scope) = scope {
+        url.query_pairs_mut()
+            .append_pair("scope", scope.api_value());
     }
+    url.query_pairs_mut()
+        .append_pair("limit", &REMOTE_PLUGIN_LIST_PAGE_LIMIT.to_string());
     if include_download_urls {
         url.query_pairs_mut()
             .append_pair("includeDownloadUrls", "true");
+    }
+    if display_assets == InstalledPluginDisplayAssets::Skip {
+        url.query_pairs_mut()
+            .append_pair("includeDisplayAssets", "false");
     }
     if let Some(page_token) = page_token {
         url.query_pairs_mut().append_pair("pageToken", page_token);

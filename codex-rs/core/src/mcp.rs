@@ -111,6 +111,7 @@ enum OrderedMcpOverlay {
 
 #[derive(Clone)]
 pub struct McpManager {
+    connection_pool: codex_mcp::McpConnectionPool,
     plugins_manager: Arc<PluginsManager>,
     extensions: Arc<ExtensionRegistry<Config>>,
     codex_apps_tools_cache: ConnectorRuntimeManager<ToolInfo>,
@@ -135,6 +136,7 @@ impl McpManager {
         codex_apps_tools_cache: ConnectorRuntimeManager<ToolInfo>,
     ) -> Self {
         Self {
+            connection_pool: codex_mcp::McpConnectionPool::default(),
             plugins_manager,
             extensions,
             codex_apps_tools_cache,
@@ -150,6 +152,10 @@ impl McpManager {
 
     pub fn tool_catalog_cache(&self) -> McpToolCatalogCache {
         self.tool_catalog_cache.clone()
+    }
+
+    pub(crate) fn connection_pool(&self) -> codex_mcp::McpConnectionPool {
+        self.connection_pool.clone()
     }
 
     pub(crate) fn shared_definitions(&self) -> &SharedMcpDefinitions {
@@ -214,18 +220,12 @@ impl McpManager {
         plugins_config: &PluginsConfigToml,
         disabled_plugin_ids: &[String],
     ) -> SelectedPluginSnapshot {
-        let roots = context
-            .ready_selected_capability_roots()
-            .unwrap_or_default();
         let mut selected = SelectedPluginSnapshot {
             disabled_plugin_ids: disabled_plugin_ids.to_vec(),
             ..Default::default()
         };
-        let v2 = context.executor_capability_discovery_v2().is_some();
         let available_roots = available_plugin_roots(context);
-        if roots.is_empty() && !v2 {
-            return selected;
-        }
+        // Check hosted plugins even when no executor roots are selected.
         for contributor in self.extensions.mcp_server_contributors() {
             for SelectedPlugin {
                 selected_root_id,
